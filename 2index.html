@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Airtel CPE Recovery & PDF Portal</title>
+  <link rel="icon" href="data:,">
+
+  <!-- Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f9; padding-bottom: 50px; }
+    #login-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: #f4f4f9; display: flex; justify-content:center; align-items:center; z-index: 3000; }
+    .login-card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 90%; max-width: 350px; text-align: center; }
+    .login-card h1 { color: #e50000; font-size: 35px; margin: 0 0 5px 0; }
+    .login-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size:14px; }
+    .login-btn { background: #e50000; color: white; width: 100%; padding: 12px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
+    .login-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+    #main-app { display: none; max-width: 600px; margin: 0 auto; padding: 15px; box-sizing: border-box; }
+    .header { background: #e50000; color: #fff; padding: 12px 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 15px; }
+    .portal-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+    .portal-tab-btn { flex: 1; padding: 10px; background: #ddd; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; font-size: 13px; color: #444; }
+    .portal-tab-btn.active { background: #e50000; color: #fff; }
+    .df-title { text-align: center; color: #d32f2f; font-size: 18px; font-weight: 900; text-transform: uppercase; margin-bottom: 12px; border-bottom: 2px solid #d32f2f; padding-bottom: 5px; }
+    .df-label { font-weight: bold; margin-top: 8px; display: block; color: #444; font-size: 13px; }
+    .df-input, .df-textarea { width: 100%; padding: 10px; margin-top: 4px; margin-bottom: 8px; box-sizing: border-box; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
+    .scan-section { background: white; border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .button-group { display: flex; gap: 6px; margin-top: 5px; }
+    .file-upload-btn { flex: 1; display: block; color: white; text-align: center; padding: 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }
+    input[type="file"].qr-file { display: none; }
+    .status-dropdown { background-color: #fff; color: #333; font-weight: bold; border: 1px solid #ccc; width:100%; padding:7px; margin-top:5px; border-radius:4px; }
+    .acc-checkboxes { margin-top:6px; padding:6px; background:#f5f5f5; border-radius:4px; font-size:12px; display:flex; gap:12px; flex-wrap:wrap; border:1px solid #ccc; }
+    .btn { padding: 8px 12px; border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; text-align: center; text-decoration: none; font-size: 12px; }
+    .btn-submit { background: #e50000; width: 100%; padding: 14px; font-size: 16px; margin-top: 10px; }
+    .report-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; background: #fff; }
+    .report-table th, .report-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .report-table th { background: #ffebee; color: #e50000; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 4000; }
+    .modal-content-landscape { background: #fff; padding: 15px; width: 95vw; max-width: 650px; border-radius: 8px; text-align: center; box-sizing: border-box; }
+    .sig-container-landscape { border: 2px dashed #e50000; background: #fff; border-radius: 6px; margin-top: 10px; touch-action: none; }
+    .sig-container-landscape canvas { display: block; width: 100%; height: 220px; cursor: crosshair; }
+    .modal-content { background: #fff; padding: 20px; width: 90%; max-width: 350px; border-radius: 8px; text-align: center; box-sizing: border-box; }
+    .debug-box { margin-top: 12px; padding: 8px; background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px; color: #475569; text-align: left; }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen">
+    <div class="login-card">
+      <h1>airtel</h1>
+      <p>Recovery Portal Login</p>
+      <input type="text" id="loginEmail" autocomplete="username" placeholder="Enter Email ID" onkeydown="if(event.key==='Enter') processLogin()">
+      <input type="password" id="loginPass" autocomplete="current-password" placeholder="Enter Password" onkeydown="if(event.key==='Enter') processLogin()">
+      <button type="button" id="loginBtn" class="login-btn" onclick="processLogin()">Secure Login 🔒</button>
+      <div id="loginError" style="color:red; font-size:12px; margin-top:10px; display:none;">Invalid Email or Password!</div>
+      <div id="loginStatusBox" class="debug-box">DB Status: Connecting to Firebase...</div>
+    </div>
+  </div>
+
+  <!-- PROFILE MODAL -->
+  <div class="modal" id="profileModal">
+    <div class="modal-content">
+      <h2 style="color:#e50000; margin-top:0;">👤 My Profile</h2>
+      <p style="margin:5px 0; text-align:left;"><strong>Name:</strong> <span id="profName"></span></p>
+      <p style="margin:5px 0; text-align:left;"><strong>Role:</strong> <span id="profRole"></span></p>
+      <p style="margin:5px 0; text-align:left;"><strong>Email:</strong> <span id="profEmail"></span></p>
+      <p style="margin:5px 0; text-align:left; margin-bottom:15px;"><strong>Mobile:</strong> <span id="profMobile"></span></p>
+      <div style="background:#f9f9f9; padding:10px; border-radius:5px; border:1px solid #eee; text-align:left; margin-bottom:15px;">
+        <label style="font-size:12px; font-weight:bold; color:#555;">Update Password:</label>
+        <input type="text" id="profNewPass" class="df-input" placeholder="Enter New Password" style="margin:5px 0 8px 0;">
+        <button type="button" class="btn" style="background:#4CAF50; width:100%;" onclick="updatePassword()">Update Password</button>
+      </div>
+      <button type="button" class="btn" style="background:#d32f2f; width:100%; padding:10px; font-size:14px; margin-bottom:8px;" onclick="processLogout()">🚪 Logout</button>
+      <button type="button" class="btn" style="background:#888; width:100%;" onclick="document.getElementById('profileModal').style.display='none'">Close</button>
+    </div>
+  </div>
+
+  <!-- WHATSAPP SHARE MODAL -->
+  <div class="modal" id="whatsappModal">
+    <div class="modal-content">
+      <h3 style="color:#25D366; margin-top:0;">💬 Send on WhatsApp</h3>
+      <p style="font-size:13px; color:#555;">PDF has been downloaded successfully! Click below to send receipt message on WhatsApp to the customer:</p>
+      <input type="hidden" id="waTargetMob">
+      <input type="hidden" id="waCustName">
+      <button type="button" class="btn" style="background:#25D366; width:100%; padding:12px; font-size:14px; font-weight:bold; margin-bottom:10px;" onclick="sendWhatsAppDirect()">🚀 Open WhatsApp Chat</button>
+      <button type="button" class="btn" style="background:#757575; width:100%; padding:8px;" onclick="document.getElementById('whatsappModal').style.display='none'">Close</button>
+    </div>
+  </div>
+
+  <!-- CUSTOMER LANDSCAPE SIGNATURE MODAL -->
+  <div class="modal" id="customerSigModal">
+    <div class="modal-content-landscape">
+      <h3 style="color:#e50000; margin-top:0;">✍️ Customer Signature (Landscape Mode)</h3>
+      <p style="font-size:12px; color:#555; margin-bottom:5px;">Sign easily inside the box below:</p>
+      <div class="sig-container-landscape">
+        <canvas id="custSigCanvas"></canvas>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:15px;">
+        <button type="button" class="btn" style="background:#757575; flex:1; padding:12px;" onclick="clearCustSignature()">Clear</button>
+        <button type="button" class="btn" style="background:#d32f2f; flex:1; padding:12px;" onclick="document.getElementById('customerSigModal').style.display='none'">Cancel</button>
+        <button type="button" class="btn" style="background:#4CAF50; flex:1; padding:12px;" onclick="saveCustomerSignature()">Save Sign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXECUTIVE LANDSCAPE SIGNATURE MODAL -->
+  <div class="modal" id="execSigModal">
+    <div class="modal-content-landscape">
+      <h3 style="color:#388e3c; margin-top:0;">✍️ Executive Signature (Landscape Mode)</h3>
+      <div class="sig-container-landscape">
+        <canvas id="execSigCanvas"></canvas>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:15px;">
+        <button type="button" class="btn" style="background:#757575; flex:1; padding:12px;" onclick="clearExecSignature()">Clear</button>
+        <button type="button" class="btn" style="background:#d32f2f; flex:1; padding:12px;" onclick="document.getElementById('execSigModal').style.display='none'">Cancel</button>
+        <button type="button" class="btn" style="background:#4CAF50; flex:1; padding:12px;" onclick="saveExecSignature()">Save Sign</button>
+      </div>
+    </div>
+  </div>
+
+<!-- MAIN APP PORTAL -->
+  <div id="main-app">
+    <div class="header">
+      <div>
+        <span id="headerTitle" style="font-size:15px;">Airtel Portal</span>
+        <div id="headerUserSub" style="font-size:11px; font-weight:normal; opacity:0.95; margin-top:2px;"></div>
+      </div>
+      <div>
+        <button type="button" class="btn" style="background:#333; padding:8px 15px; font-size:13px;" onclick="openProfileModal()">👤 Profile</button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="portal-tabs">
+      <button type="button" class="portal-tab-btn active" id="tabRecoveryBtn" onclick="switchTab('recovery')">➕ New Recovery & PDF</button>
+      <button type="button" class="portal-tab-btn" id="tabReportBtn" onclick="switchTab('report')">📋 My Recovered Report</button>
+    </div>
+
+    <!-- RECOVERY FORM TAB -->
+    <div id="recoveryTabContent" style="background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+      <h2 class="df-title">Device Recovery & PDF Generator</h2>
+      <form id="myForm" onsubmit="submitRecoveryForm(event)">
+        <label class="df-label">Mobile Number * (Type to auto-fill details)</label>
+        <input type="tel" id="df-mobile" class="df-input" placeholder="10-digit Mobile Number" oninput="autoFillCustomerByMobile(this.value)" required>
+
+        <label class="df-label">Customer Name *</label>
+        <input type="text" id="df-name" class="df-input" placeholder="Enter Customer Name" required>
+
+        <label class="df-label">Order ID / CRM (Optional)</label>
+        <input type="text" id="df-crm" class="df-input" placeholder="Order ID or CRM Number">
+
+        <label class="df-label">Email ID (Optional)</label>
+        <input type="email" id="df-email" class="df-input" placeholder="Customer Email ID">
+
+        <label class="df-label">Installation Address *</label>
+        <textarea id="df-address" class="df-textarea" rows="2" placeholder="Full Address" required></textarea>
+
+        <div style="margin-bottom: 10px;">
+          <button type="button" class="btn" style="background:#4285F4; width:100%;" onclick="getLocationAndFillAddress()">📍 Fetch GPS & Auto-Fill Address</button>
+        </div>
+
+        <!-- AP QR -->
+        <div class="scan-section">
+          <label style="color:#d32f2f;font-weight:bold;font-size:13px;">1. AP QR Code:</label>
+          <textarea id="ap_qr" class="df-textarea" rows="2" placeholder="AP Code or Scan here..." oninput="autoUpdateStatus('ap_qr')"></textarea>
+          <div class="button-group">
+            <button type="button" class="file-upload-btn" style="background-color:#000; border:none;" onclick="openBinaryEyeScanner('ap_qr')">📷 Open Camera Scan</button>
+            <label class="file-upload-btn" style="background-color:#555;">🖼️ Gallery <input type="file" class="qr-file" accept="image/*" onchange="handleNativeCameraScan(event, 'ap_qr')"></label>
+          </div>
+          <select id="ap_remark" class="status-dropdown">
+            <option value="Received" selected>✅ Received</option>
+            <option value="Device Lost">⚠️ Device Lost</option>
+            <option value="Refused by Customer">🚫 Refused by Customer</option>
+          </select>
+        </div>
+
+        <!-- ODCE QR -->
+        <div class="scan-section">
+          <label style="color:#1976d2;font-weight:bold;font-size:13px;">2. ODCPE QR Code:</label>
+          <textarea id="odce_qr" class="df-textarea" rows="2" placeholder="ODCPE Code or Scan here..." oninput="autoUpdateStatus('odce_qr')"></textarea>
+          <div class="button-group">
+            <button type="button" class="file-upload-btn" style="background-color:#000; border:none;" onclick="openBinaryEyeScanner('odce_qr')">📷 Open Camera Scan</button>
+            <label class="file-upload-btn" style="background-color:#555;">🖼️ Gallery <input type="file" class="qr-file" accept="image/*" onchange="handleNativeCameraScan(event, 'odce_qr')"></label>
+          </div>
+          <div class="acc-checkboxes">
+            <label><input type="checkbox" id="odce_acc_adaptor" value="Adaptor"> ☑️ Adaptor</label>
+          </div>
+          <select id="odce_remark" class="status-dropdown">
+            <option value="Received" selected>✅ Received</option>
+            <option value="Device Lost">⚠️ Device Lost</option>
+            <option value="Refused by Customer">🚫 Refused by Customer</option>
+          </select>
+        </div>
+
+        <!-- ONT QR -->
+        <div class="scan-section">
+          <label style="color:#388e3c;font-weight:bold;font-size:13px;">3. ONT QR Code:</label>
+          <textarea id="ont_qr" class="df-textarea" rows="2" placeholder="ONT Code or Scan here..." oninput="autoUpdateStatus('ont_qr')"></textarea>
+          <div class="button-group">
+            <button type="button" class="file-upload-btn" style="background-color:#000; border:none;" onclick="openBinaryEyeScanner('ont_qr')">📷 Open Camera Scan</button>
+            <label class="file-upload-btn" style="background-color:#555;">🖼️ Gallery <input type="file" class="qr-file" accept="image/*" onchange="handleNativeCameraScan(event, 'ont_qr')"></label>
+          </div>
+          <div class="acc-checkboxes">
+            <label><input type="checkbox" id="ont_acc_adaptor" value="Adaptor"> ☑️ Adaptor</label>
+          </div>
+          <select id="ont_remark" class="status-dropdown">
+            <option value="Received" selected>✅ Received</option>
+            <option value="Device Lost">⚠️ Device Lost</option>
+            <option value="Refused by Customer">🚫 Refused by Customer</option>
+          </select>
+        </div>
+
+        <!-- STV QR -->
+        <div class="scan-section">
+          <label style="color:#e65100;font-weight:bold;font-size:13px;">4. IPTV QR Code:</label>
+          <textarea id="stv_qr" class="df-textarea" rows="2" placeholder="IPTV Code or Scan here..." oninput="autoUpdateStatus('stv_qr')"></textarea>
+          <div class="button-group">
+            <button type="button" class="file-upload-btn" style="background-color:#000; border:none;" onclick="openBinaryEyeScanner('stv_qr')">📷 Open Camera Scan</button>
+            <label class="file-upload-btn" style="background-color:#555;">🖼️ Gallery <input type="file" class="qr-file" accept="image/*" onchange="handleNativeCameraScan(event, 'stv_qr')"></label>
+          </div>
+          <div class="acc-checkboxes">
+            <label><input type="checkbox" id="stv_acc_remote" value="Remote"> ☑️ Remote</label>
+            <label><input type="checkbox" id="stv_acc_hdmi" value="HDMI"> ☑️ HDMI</label>
+            <label><input type="checkbox" id="stv_acc_adaptor" value="Adaptor"> ☑️ Adaptor</label>
+          </div>
+          <select id="stv_remark" class="status-dropdown">
+            <option value="Received" selected>✅ Received</option>
+            <option value="Device Lost">⚠️ Device Lost</option>
+            <option value="Refused by Customer">🚫 Refused by Customer</option>
+          </select>
+        </div>
+
+        <div class="scan-section" style="background-color: #efebe9;">
+          <label style="color: #5d4037; font-weight:bold; font-size:13px;">📦 Other Items:</label>
+          <textarea id="other_items" class="df-textarea" rows="2" placeholder="Adapters, Cables, etc."></textarea>
+        </div>
+
+        <!-- SIGNATURE BUTTONS -->
+        <div class="scan-section" style="background:#f9f9f9;">
+          <label style="color:#333; font-weight:bold; font-size:13px; margin-bottom:8px; display:block;">✍️ Signatures:</label>
+          <div style="display:flex; gap:10px;">
+            <button type="button" class="btn" style="background:#1976d2; flex:1; padding:12px; font-size:13px;" onclick="openCustomerSigModal()">🖊️ Customer Signature</button>
+            <button type="button" class="btn" style="background:#388e3c; flex:1; padding:12px; font-size:13px;" onclick="openExecSigModal()">🖊️ Executive Signature</button>
+          </div>
+          <div id="sigStatusText" style="font-size:12px; color:#2e7d32; font-weight:bold; margin-top:8px; text-align:center;"></div>
+        </div>
+
+        <div id="dummy-reader" style="display: none;"></div>
+        <button type="submit" id="df-submitBtn" class="btn btn-submit">📥 Download PDF</button>
+      </form>
+    </div>
+
+    <!-- REPORT TAB -->
+    <div id="reportTabContent" style="display:none;">
+      <h3 style="color:#e50000; margin-top:0;">📋 My Recovered Customers Report</h3>
+      <input type="text" id="reportSearchInput" class="df-input" placeholder="🔍 Search Name, Mobile, Order ID..." onkeyup="renderMyReport()">
+      <div id="reportListContainer">
+        <p style="color:#666;">Loading your recoveries...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDUJHCw-nEMfY2Km27KB0x3X0sjdZEIBH0",
+      authDomain: "online-form-92cef.firebaseapp.com",
+      databaseURL: "https://online-form-92cef-default-rtdb.firebaseio.com",
+      projectId: "online-form-92cef",
+      storageBucket: "online-form-92cef.firebasestorage.app",
+      messagingSenderId: "852990730067",
+      appId: "1:852990730067:web:acd9007dbb17f7290e4ba6"
+    };
+
+    let db = null;
+    let usersRef = null;
+    let customersRef = null;
+    let firebaseReady = false;
+
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      db = firebase.database();
+      usersRef = db.ref('AirtelUsers');
+      customersRef = db.ref('AirtelCustomers');
+      firebaseReady = true;
+
+      db.ref('.info/connected').on('value', snap => {
+        let statusBox = document.getElementById('loginStatusBox');
+        if (!statusBox) return;
+        if (snap.val() === true) {
+          statusBox.innerText = "DB Status: Connected to Firebase Realtime DB ✅";
+        } else {
+          statusBox.innerText = "DB Status: Connecting / Checking network...";
+        }
+      });
+    } catch (initErr) {
+      firebaseReady = false;
+      setTimeout(() => {
+        let statusBox = document.getElementById('loginStatusBox');
+        if (statusBox) statusBox.innerText = "DB Init Error: " + (initErr.message || initErr);
+      }, 100);
+    }
+
+    let activeUser = null;
+    let allSystemCustomers = [];
+    let activeUserKey = null;
+    let custSigDataUrl = "";
+    let execSigDataUrl = "";
+    let custCanvas, custCtx, custDrawing = false;
+    let execCanvas, execCtx, execDrawing = false;
+
+    function initCanvas(canvasEl) {
+      if (!canvasEl) return null;
+      let rect = canvasEl.getBoundingClientRect();
+      canvasEl.width = rect.width > 0 ? rect.width : 550;
+      canvasEl.height = 220;
+      let c = canvasEl.getContext('2d');
+      c.strokeStyle = "#000";
+      c.lineWidth = 2.5;
+      c.lineCap = "round";
+      return c;
+    }
+
+    function openCustomerSigModal() {
+      document.getElementById('customerSigModal').style.display = 'flex';
+      setTimeout(() => {
+        custCanvas = document.getElementById('custSigCanvas');
+        custCtx = initCanvas(custCanvas);
+        setupCanvasEvents(custCanvas, (type, e) => {
+          if (type === 'start') { custDrawing = true; custCtx.beginPath(); custCtx.moveTo(e.x, e.y); }
+          if (type === 'draw') { if (!custDrawing) return; custCtx.lineTo(e.x, e.y); custCtx.stroke(); }
+          if (type === 'end') { custDrawing = false; }
+        });
+      }, 100);
+    }
+
+    function openExecSigModal() {
+      document.getElementById('execSigModal').style.display = 'flex';
+      setTimeout(() => {
+        execCanvas = document.getElementById('execSigCanvas');
+        execCtx = initCanvas(execCanvas);
+        setupCanvasEvents(execCanvas, (type, e) => {
+          if (type === 'start') { execDrawing = true; execCtx.beginPath(); execCtx.moveTo(e.x, e.y); }
+          if (type === 'draw') { if (!execDrawing) return; execCtx.lineTo(e.x, e.y); execCtx.stroke(); }
+          if (type === 'end') { execDrawing = false; }
+        });
+      }, 100);
+    }
+
+    function setupCanvasEvents(canvasEl, callback) {
+      canvasEl.onmousedown = e => callback('start', { x: e.offsetX, y: e.offsetY });
+      canvasEl.onmousemove = e => callback('draw', { x: e.offsetX, y: e.offsetY });
+      canvasEl.onmouseup = () => callback('end');
+      canvasEl.onmouseleave = () => callback('end');
+      canvasEl.ontouchstart = e => {
+        e.preventDefault();
+        let r = canvasEl.getBoundingClientRect(), t = e.touches[0];
+        callback('start', { x: t.clientX - r.left, y: t.clientY - r.top });
+      };
+      canvasEl.ontouchmove = e => {
+        e.preventDefault();
+        let r = canvasEl.getBoundingClientRect(), t = e.touches[0];
+        callback('draw', { x: t.clientX - r.left, y: t.clientY - r.top });
+      };
+      canvasEl.ontouchend = () => callback('end');
+    }
+
+    function clearCustSignature() { if (custCtx && custCanvas) custCtx.clearRect(0, 0, custCanvas.width, custCanvas.height); }
+    function saveCustomerSignature() { if (custCanvas) custSigDataUrl = custCanvas.toDataURL("image/png"); document.getElementById('customerSigModal').style.display = 'none'; updateSigStatus(); }
+    function clearExecSignature() { if (execCtx && execCanvas) execCtx.clearRect(0, 0, execCanvas.width, execCanvas.height); }
+    function saveExecSignature() { if (execCanvas) execSigDataUrl = execCanvas.toDataURL("image/png"); document.getElementById('execSigModal').style.display = 'none'; updateSigStatus(); }
+
+    function updateSigStatus() {
+      let txt = "";
+      if (custSigDataUrl) txt += "✅ Customer Sign Saved | ";
+      if (execSigDataUrl) txt += "✅ Executive Sign Saved";
+      document.getElementById('sigStatusText').innerText = txt;
+    }
+
+    function extractUserEmail(u) {
+      if (!u || typeof u !== 'object') return "";
+      return String(u.email || u.Email || u.mail || u.userEmail || u.username || "").trim();
+    }
+
+    function extractUserPass(u) {
+      if (!u || typeof u !== 'object') return "";
+      return String(u.pass || u.password || u.Password || u.pwd || "").trim();
+    }
+
+    function processLogin() {
+      let e = document.getElementById('loginEmail').value.trim();
+      let p = document.getElementById('loginPass').value.trim();
+      let errDiv = document.getElementById('loginError');
+      let loginBtn = document.getElementById('loginBtn');
+      let statusBox = document.getElementById('loginStatusBox');
+
+      if (!e || !p) {
+        errDiv.innerText = "Please enter Email and Password!";
+        errDiv.style.display = 'block';
+        return;
+      }
+
+      if (!firebaseReady || !usersRef) {
+        errDiv.innerText = "❌ Firebase Database not initialized!";
+        errDiv.style.display = 'block';
+        return;
+      }
+
+      errDiv.style.display = 'none';
+      loginBtn.disabled = true;
+      loginBtn.innerText = "Logging in...";
+      if (statusBox) statusBox.innerText = "DB Status: Checking credentials in AirtelUsers...";
+
+      let timedOut = false;
+      let timer = setTimeout(() => {
+        timedOut = true;
+        loginBtn.disabled = false;
+        loginBtn.innerText = "Secure Login 🔒";
+        errDiv.innerText = "❌ Database response timeout! Check internet or Firebase Realtime Database Rules.";
+        errDiv.style.display = 'block';
+        if (statusBox) statusBox.innerText = "DB Status: Timeout waiting for AirtelUsers";
+      }, 10000);
+
+      usersRef.once('value', snap => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        loginBtn.disabled = false;
+        loginBtn.innerText = "Secure Login 🔒";
+
+        if (!snap.exists()) {
+          errDiv.innerText = "❌ No users found under 'AirtelUsers' in Firebase!";
+          errDiv.style.display = 'block';
+          if (statusBox) statusBox.innerText = "DB Status: AirtelUsers node is empty";
+          return;
+        }
+
+        let found = false;
+        let userCount = 0;
+        snap.forEach(child => {
+          userCount++;
+          let u = child.val() || {};
+          let dbEmail = extractUserEmail(u).toLowerCase();
+          let dbPass = extractUserPass(u);
+          if (dbEmail && dbEmail === e.toLowerCase() && dbPass === p) {
+            found = true;
+            let normalizedUser = Object.assign({}, u, {
+              email: extractUserEmail(u) || e,
+              name: u.name || u.Name || "User",
+              mobile: u.mobile || u.Mobile || u.phone || "",
+              role: u.role || u.Role || "Field Executive"
+            });
+            finishLogin(child.key, normalizedUser);
+          }
+        });
+
+        if (statusBox) statusBox.innerText = `DB Status: Checked ${userCount} user(s) in AirtelUsers`;
+
+        if (!found) {
+          errDiv.innerText = "❌ Invalid Email or Password!";
+          errDiv.style.display = 'block';
+        }
+      }, error => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        loginBtn.disabled = false;
+        loginBtn.innerText = "Secure Login 🔒";
+        errDiv.innerText = "❌ Database error: " + (error.message || "Permission denied / connection failed");
+        errDiv.style.display = 'block';
+        if (statusBox) statusBox.innerText = "DB Error: " + (error.message || "Read failed");
+      });
+    }
+
+    function finishLogin(userKey, userObj) {
+      activeUserKey = userKey || "";
+      activeUser = userObj || {};
+      let mailText = extractUserEmail(activeUser);
+      if (mailText && !activeUser.email) activeUser.email = mailText;
+
+      try {
+        localStorage.setItem('portalUserKey', activeUserKey);
+        localStorage.setItem('portalUserSession', JSON.stringify(activeUser));
+      } catch (e) {}
+
+      let loginScreen = document.getElementById('login-screen');
+      let mainApp = document.getElementById('main-app');
+      if (loginScreen) {
+        loginScreen.style.setProperty('display', 'none', 'important');
+      }
+      if (mainApp) {
+        mainApp.style.setProperty('display', 'block', 'important');
+      }
+
+      document.getElementById('headerTitle').innerText = "Airtel Portal";
+      let userName = activeUser.name || activeUser.Name || "User";
+      let userEmailDisplay = mailText ? ` | ${mailText}` : "";
+      let userMob = activeUser.mobile ? ` (${activeUser.mobile})` : "";
+      document.getElementById('headerUserSub').innerText = `${userName}${userMob}${userEmailDisplay}`;
+
+      if (customersRef) {
+        customersRef.off();
+        customersRef.on('value', snap => {
+          allSystemCustomers = [];
+          snap.forEach(child => {
+            let val = child.val() || {};
+            if (!val.id) val.id = child.key;
+            allSystemCustomers.push(val);
+          });
+          if (document.getElementById('reportTabContent').style.display === 'block') {
+            renderMyReport();
+          }
+        });
+      }
+    }
+
+    function openProfileModal() {
+      if (!activeUser) return;
+      document.getElementById('profName').innerText = activeUser.name || activeUser.Name || "N/A";
+      document.getElementById('profRole').innerText = activeUser.role || activeUser.Role || "Field Executive";
+      document.getElementById('profEmail').innerText = extractUserEmail(activeUser) || "N/A";
+      document.getElementById('profMobile').innerText = activeUser.mobile || activeUser.Mobile || "N/A";
+      document.getElementById('profNewPass').value = "";
+      document.getElementById('profileModal').style.display = 'flex';
+    }
+
+    function updatePassword() {
+      let newPass = document.getElementById('profNewPass').value.trim();
+      if (!newPass) return alert("Please enter a new password!");
+      if (!activeUserKey) return alert("User record key not found!");
+      usersRef.child(activeUserKey).update({ pass: newPass }).then(() => {
+        activeUser.pass = newPass;
+        localStorage.setItem('portalUserSession', JSON.stringify(activeUser));
+        alert("✅ Password updated successfully!");
+        document.getElementById('profNewPass').value = "";
+      }).catch(err => alert("Error updating password: " + err.message));
+    }
+
+    function processLogout() {
+      localStorage.removeItem('portalUserSession');
+      localStorage.removeItem('portalUserKey');
+      location.reload();
+    }
+
+    function restoreFormDraftAfterScan() {
+      try {
+        const draftRaw = localStorage.getItem('cpeRecoveryDraft_v1');
+        if (!draftRaw) return;
+        const d = JSON.parse(draftRaw);
+        if (d.mobile) document.getElementById('df-mobile').value = d.mobile;
+        if (d.name) document.getElementById('df-name').value = d.name;
+        if (d.crm) document.getElementById('df-crm').value = d.crm;
+        if (d.email) document.getElementById('df-email').value = d.email;
+        if (d.address) document.getElementById('df-address').value = d.address;
+        if (d.ap_qr) { document.getElementById('ap_qr').value = d.ap_qr; autoUpdateStatus('ap_qr'); }
+        if (d.ap_remark) document.getElementById('ap_remark').value = d.ap_remark;
+        if (d.odce_qr) { document.getElementById('odce_qr').value = d.odce_qr; autoUpdateStatus('odce_qr'); }
+        if (d.odce_acc_adaptor !== undefined) document.getElementById('odce_acc_adaptor').checked = !!d.odce_acc_adaptor;
+        if (d.odce_remark) document.getElementById('odce_remark').value = d.odce_remark;
+        if (d.ont_qr) { document.getElementById('ont_qr').value = d.ont_qr; autoUpdateStatus('ont_qr'); }
+        if (d.ont_acc_adaptor !== undefined) document.getElementById('ont_acc_adaptor').checked = !!d.ont_acc_adaptor;
+        if (d.ont_remark) document.getElementById('ont_remark').value = d.ont_remark;
+        if (d.stv_qr) { document.getElementById('stv_qr').value = d.stv_qr; autoUpdateStatus('stv_qr'); }
+        if (d.stv_acc_remote !== undefined) document.getElementById('stv_acc_remote').checked = !!d.stv_acc_remote;
+        if (d.stv_acc_hdmi !== undefined) document.getElementById('stv_acc_hdmi').checked = !!d.stv_acc_hdmi;
+        if (d.stv_acc_adaptor !== undefined) document.getElementById('stv_acc_adaptor').checked = !!d.stv_acc_adaptor;
+        if (d.stv_remark) document.getElementById('stv_remark').value = d.stv_remark;
+        if (d.other_items) document.getElementById('other_items').value = d.other_items;
+        if (d.custSigDataUrl) custSigDataUrl = d.custSigDataUrl;
+        if (d.execSigDataUrl) execSigDataUrl = d.execSigDataUrl;
+        updateSigStatus();
+      } catch (e) {}
+    }
+
+    function saveFormDraftBeforeScan() {
+      try {
+        const draft = {
+          mobile: document.getElementById('df-mobile').value,
+          name: document.getElementById('df-name').value,
+          crm: document.getElementById('df-crm').value,
+          email: document.getElementById('df-email').value,
+          address: document.getElementById('df-address').value,
+          ap_qr: document.getElementById('ap_qr').value,
+          ap_remark: document.getElementById('ap_remark').value,
+          odce_qr: document.getElementById('odce_qr').value,
+          odce_acc_adaptor: document.getElementById('odce_acc_adaptor').checked,
+          odce_remark: document.getElementById('odce_remark').value,
+          ont_qr: document.getElementById('ont_qr').value,
+          ont_acc_adaptor: document.getElementById('ont_acc_adaptor').checked,
+          ont_remark: document.getElementById('ont_remark').value,
+          stv_qr: document.getElementById('stv_qr').value,
+          stv_acc_remote: document.getElementById('stv_acc_remote').checked,
+          stv_acc_hdmi: document.getElementById('stv_acc_hdmi').checked,
+          stv_acc_adaptor: document.getElementById('stv_acc_adaptor').checked,
+          stv_remark: document.getElementById('stv_remark').value,
+          other_items: document.getElementById('other_items').value,
+          custSigDataUrl: custSigDataUrl,
+          execSigDataUrl: execSigDataUrl
+        };
+        localStorage.setItem('cpeRecoveryDraft_v1', JSON.stringify(draft));
+      } catch (e) {}
+    }
+
+    window.onload = () => {
+      try {
+        let session = localStorage.getItem('portalUserSession');
+        let userKey = localStorage.getItem('portalUserKey');
+        if (session) {
+          let parsed = JSON.parse(session);
+          if (parsed && (extractUserEmail(parsed) || parsed.name || parsed.Name)) {
+            finishLogin(userKey, parsed);
+          }
+        }
+      } catch (e) {
+        localStorage.removeItem('portalUserSession');
+        localStorage.removeItem('portalUserKey');
+      }
+
+      restoreFormDraftAfterScan();
+
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const scannedData = urlParams.get('data');
+        const targetFieldId = urlParams.get('target') || localStorage.getItem('pendingBinaryEyeTargetId');
+
+        if (scannedData && scannedData !== '{RESULT}' && scannedData !== '{CODE}' && targetFieldId) {
+          const targetEl = document.getElementById(targetFieldId);
+          if (targetEl) {
+            targetEl.value = scannedData;
+            autoUpdateStatus(targetFieldId);
+            saveFormDraftBeforeScan();
+          }
+          localStorage.removeItem('pendingBinaryEyeTargetId');
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
+      } catch (e) {}
+    };
+
+    function switchTab(tabName) {
+      if (tabName === 'recovery') {
+        document.getElementById('recoveryTabContent').style.display = 'block';
+        document.getElementById('reportTabContent').style.display = 'none';
+        document.getElementById('tabRecoveryBtn').classList.add('active');
+        document.getElementById('tabReportBtn').classList.remove('active');
+      } else {
+        document.getElementById('recoveryTabContent').style.display = 'none';
+        document.getElementById('reportTabContent').style.display = 'block';
+        document.getElementById('tabRecoveryBtn').classList.remove('active');
+        document.getElementById('tabReportBtn').classList.add('active');
+        renderMyReport();
+      }
+    }
+
+    function autoFillCustomerByMobile(mob) {
+      let cleanMob = mob.trim();
+      if (cleanMob.length < 10) return;
+      let found = allSystemCustomers.find(c => c.mobile && c.mobile.toString().trim() === cleanMob);
+      if (found) {
+        document.getElementById('df-name').value = found.name || "";
+        document.getElementById('df-crm').value = found.crm || "";
+        document.getElementById('df-address').value = found.address || "";
+      }
+    }
+
+    function getLocationAndFillAddress() {
+      if (navigator.geolocation) {
+        let addrBox = document.getElementById("df-address");
+        navigator.geolocation.getCurrentPosition(pos => {
+          let latLng = pos.coords.latitude + ", " + pos.coords.longitude;
+          let currentAddr = addrBox.value.trim();
+          if (!currentAddr || currentAddr.includes("GPS:")) {
+            addrBox.value = `Location GPS: ${latLng}`;
+          } else {
+            addrBox.value = currentAddr + ` | GPS: ${latLng}`;
+          }
+          alert("✅ GPS Location Fetched & Added!");
+        }, err => alert("Please turn on your GPS/Location!"));
+      }
+    }
+
+    function autoUpdateStatus(qrId) {
+      let el = document.getElementById(qrId);
+      if (!el) return;
+      let v = el.value.trim();
+      let label = el.previousElementSibling;
+      let snFound = /(?:Serial Number|SN|S\/N|ER NO\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i.test(v);
+      if (label && snFound && !label.innerHTML.includes("✅ SN")) {
+        label.innerHTML += " <span style='background:#4CAF50;color:white;padding:2px 4px;border-radius:3px;font-size:10px;'>✅ SN Found</span>";
+      }
+    }
+
+    const nativeScanner = new Html5Qrcode("dummy-reader");
+    function handleNativeCameraScan(event, targetId) {
+      if (event.target.files.length === 0) return;
+      const imageFile = event.target.files[0];
+      const targetElement = document.getElementById(targetId);
+      targetElement.value = "(Scanning QR from photo...)";
+      nativeScanner.scanFile(imageFile, true)
+        .then(decodedText => {
+          targetElement.value = decodedText;
+          autoUpdateStatus(targetId);
+          alert("✅ QR Code Successfully Scanned!");
+        })
+        .catch(err => {
+          targetElement.value = "IMG_" + Date.now();
+          alert("⚠️ QR code not automatically read from image. Raw placeholder added.");
+        });
+      event.target.value = "";
+    }
+
+
+    let activeBinaryEyeTargetId = null;
+
+    function openBinaryEyeScanner(targetId) {
+      activeBinaryEyeTargetId = targetId;
+      saveFormDraftBeforeScan();
+      try {
+        localStorage.setItem("pendingBinaryEyeTargetId", targetId);
+      } catch (e) {}
+
+      let currentUrl = window.location.origin + window.location.pathname;
+      let returnUrl = encodeURIComponent(currentUrl + "?target=" + encodeURIComponent(targetId) + "&data=") + "{RESULT}";
+      let intentUrl = "binaryeye://scan?ret=" + returnUrl;
+
+      window.location.href = intentUrl;
+    }
+
+    function extractDeviceDetails(text, type) {
+      if (!text || text === "N/A") return { model: '', sn: '' };
+      let t = text.toString();
+      let model = '', sn = '';
+      let mMatch = t.match(/(?:Model No\.?|MODEL)\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i);
+      if (mMatch) model = mMatch[1];
+      if (type === 'ONT') {
+        let eMatch = t.match(/ER NO\.?\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i);
+        if (eMatch) sn = eMatch[1];
+        else {
+          let sMatch = t.match(/(?:Serial Number|SN|S\/N)\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i);
+          if (sMatch) sn = sMatch[1];
+        }
+      } else {
+        let sMatch = t.match(/(?:Serial Number|SN|S\/N)\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i);
+        if (sMatch) sn = sMatch[1];
+      }
+      if (!sn) {
+        let lines = t.split('\n');
+        if (lines.length > 0) sn = lines[0];
+      }
+      return { model: model, sn: sn };
+    }
+
+    function submitRecoveryForm(event) {
+      event.preventDefault();
+      let name = document.getElementById('df-name').value.trim();
+      let mobile = document.getElementById('df-mobile').value.trim();
+      let crm = document.getElementById('df-crm').value.trim();
+      let email = document.getElementById('df-email').value.trim();
+      let address = document.getElementById('df-address').value.trim();
+      let otherItems = document.getElementById('other_items').value.trim();
+
+      let stvAccArr = [];
+      if (document.getElementById('stv_acc_remote').checked) stvAccArr.push('Remote');
+      if (document.getElementById('stv_acc_hdmi').checked) stvAccArr.push('HDMI');
+      if (document.getElementById('stv_acc_adaptor').checked) stvAccArr.push('Adaptor');
+
+      let deviceData = {
+        ap_qr: document.getElementById('ap_qr').value.trim(),
+        ap_acc: '',
+        ap_remark: document.getElementById('ap_remark').value,
+        odce_qr: document.getElementById('odce_qr').value.trim(),
+        odce_acc: document.getElementById('odce_acc_adaptor').checked ? 'Adaptor' : '',
+        odce_remark: document.getElementById('odce_remark').value,
+        ont_qr: document.getElementById('ont_qr').value.trim(),
+        ont_acc: document.getElementById('ont_acc_adaptor').checked ? 'Adaptor' : '',
+        ont_remark: document.getElementById('ont_remark').value,
+        stv_qr: document.getElementById('stv_qr').value.trim(),
+        stv_acc: stvAccArr.join(', '),
+        stv_remark: document.getElementById('stv_remark').value,
+        other_items: otherItems,
+        customerSig: custSigDataUrl,
+        executiveSig: execSigDataUrl,
+        receiptNo: "HIT/" + new Date().getFullYear().toString().substr(-2) + (new Date().getMonth() + 1).toString().padStart(2, '0') + "/" + Math.floor(1000 + Math.random() * 9000)
+      };
+
+      let matchingCust = allSystemCustomers.find(c => c.mobile && c.mobile.toString().trim() === mobile);
+      let targetId = matchingCust && matchingCust.id ? matchingCust.id : customersRef.push().key;
+      let historyEntry = { date: new Date().toISOString(), reason: "✅ Self Recovered via Portal" };
+      let existingHistory = (matchingCust && Array.isArray(matchingCust.history)) ? matchingCust.history.slice() : [];
+      existingHistory.unshift(historyEntry);
+
+      let customerPayload = {
+        id: targetId,
+        name: name,
+        mobile: mobile,
+        crm: crm,
+        email: email,
+        address: address,
+        category: 'Already Recovery',
+        ready: 'Yes',
+        history: existingHistory,
+        deviceData: deviceData,
+        lastUpdated: Date.now(),
+        addedByEmail: activeUser ? (extractUserEmail(activeUser)) : "",
+        execName: activeUser ? (activeUser.name || "") : ""
+      };
+
+      customersRef.child(targetId).set(customerPayload).then(() => {
+        generatePDFReceipt(customerPayload);
+        document.getElementById('waTargetMob').value = mobile;
+        document.getElementById('waCustName').value = name;
+        document.getElementById('whatsappModal').style.display = 'flex';
+        document.getElementById('myForm').reset();
+        try { localStorage.removeItem('cpeRecoveryDraft_v1'); } catch (e) {}
+        custSigDataUrl = "";
+        execSigDataUrl = "";
+        document.getElementById('sigStatusText').innerText = "";
+        clearCustSignature();
+        clearExecSignature();
+      }).catch(err => alert("Error saving: " + err.message));
+    }
+
+    function sendWhatsAppDirect() {
+      let mob = document.getElementById('waTargetMob').value.trim();
+      let name = document.getElementById('waCustName').value.trim();
+      if (!mob) return;
+      let cleanMob = mob.replace(/\D/g, '');
+      let msg = `Dear ${name},\n\nYour Airtel CPE Equipment Return Acknowledged successfully. Thank you for returning the equipment to Airtel.\n\nBest regards,\nAirtel Recovery Team`;
+      window.location.href = `https://api.whatsapp.com/send?phone=91${cleanMob}&text=${encodeURIComponent(msg)}`;
+      document.getElementById('whatsappModal').style.display = 'none';
+    }
+
+    function generatePDFReceipt(c, copyType = "CUSTOMER") {
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const isOfficeCopy = String(copyType).toUpperCase() === "OFFICE";
+        const copyLabel = isOfficeCopy ? "OFFICE COPY" : "CUSTOMER COPY";
+        const filePrefix = isOfficeCopy ? "Airtel_Office_Copy" : "Airtel_Customer_Copy";
+
+        let todayDate = new Date().toLocaleString('en-IN').split(',')[0];
+        let execName = activeUser ? `${activeUser.name || 'Advisor'} (${activeUser.mobile || 'N/A'})` : (c.execName || "Advisor");
+        let recNo = (c.deviceData && c.deviceData.receiptNo) ? c.deviceData.receiptNo : "N/A";
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text(copyLabel, 105, 12, { align: "center" });
+
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.4);
+        doc.rect(10, 15, 190, 265);
+
+        doc.setFillColor(230, 230, 230);
+        doc.rect(10, 15, 190, 8, 'F');
+        doc.setFontSize(10);
+        doc.text("Customer Premises Equipment Return Note", 105, 20.5, { align: "center" });
+        doc.line(10, 23, 200, 23);
+
+        doc.setTextColor(229, 0, 0);
+        doc.setFontSize(22);
+        doc.text("airtel", 15, 33);
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "bold");
+        doc.text("Telemedia Services | www.airtel.in", 195, 31, { align: "right" });
+        doc.line(10, 36, 200, 36);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Bharti Airtel Limited\nAirtel Center, Plot No. 16,\nUdyog Vihar, Phase-IV, Gurugram- 122015", 14, 41);
+        doc.line(105, 36, 105, 54);
+
+        let recInfo = `Material Receipt No: ${recNo}\n` + (c.crm ? `Order ID: ${c.crm}\n` : '') + `Date: ${todayDate}\n` + `Contact No: ${c.mobile}`;
+        doc.text(recInfo, 108, 41);
+        doc.line(10, 54, 200, 54);
+
+        doc.setFillColor(245, 245, 245);
+        doc.rect(10, 54, 190, 6, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("Customer Details & Installation Address", 105, 58.5, { align: "center" });
+        doc.line(10, 60, 200, 60);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text(`Customer Name: ${c.name}`, 14, 66);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        let cleanAddr = doc.splitTextToSize(`Address: ${c.address}`, 180);
+        doc.text(cleanAddr, 14, 72);
+
+        let tableStartY = 74 + (cleanAddr.length * 4);
+        doc.line(10, tableStartY - 2, 200, tableStartY - 2);
+
+        let tableRows = [];
+        let scanLogs = [];
+        let dd = c.deviceData || {};
+
+        let addDevRow = (devName, rawStr, type, accStr, remark, forcedModel) => {
+          if (!rawStr || rawStr.trim() === "") return;
+          let trimmedRaw = rawStr.trim();
+          let ext = extractDeviceDetails(trimmedRaw, type);
+          let cpeText = (accStr && accStr.trim() !== "") ? `${devName}\n(with ${accStr})` : devName;
+          let modelVal = forcedModel || ext.model || "N/A";
+          let snVal = ext.sn || trimmedRaw;
+
+          if (isOfficeCopy) {
+            let singleLineScan = trimmedRaw.replace(/\s+/g, ' ').trim();
+            let detailLines = [`SN: ${snVal}`];
+            if (ext.model) detailLines.push(`Model: ${ext.model}`);
+            if (accStr && accStr.trim() !== "") detailLines.push(`Acc: ${accStr.trim()}`);
+            if (singleLineScan !== snVal) detailLines.push(`Raw Scan: ${singleLineScan}`);
+            tableRows.push([cpeText, modelVal, "1", detailLines.join("\n"), remark || "Received"]);
+            scanLogs.push(`${devName} [${remark || 'Received'}]: ${singleLineScan}`);
+          } else {
+            tableRows.push([cpeText, modelVal, "1", snVal, remark || "Received"]);
+          }
+        };
+
+        addDevRow("AP", dd.ap_qr, "AP", dd.ap_acc, dd.ap_remark);
+        addDevRow("ODCPE", dd.odce_qr, "ODCPE", dd.odce_acc, dd.odce_remark);
+        addDevRow("ONT", dd.ont_qr, "ONT", dd.ont_acc, dd.ont_remark);
+        addDevRow("IPTV", dd.stv_qr, "IPTV", dd.stv_acc, dd.stv_remark, "IPTV");
+        if (dd.other_items && dd.other_items.trim() !== "") {
+          tableRows.push(["Other Items", "N/A", "1", dd.other_items.trim(), "Received"]);
+          if (isOfficeCopy) {
+            scanLogs.push(`Other Items: ${dd.other_items.trim().replace(/\s+/g, ' ')}`);
+          }
+        }
+        if (tableRows.length === 0) {
+          tableRows.push(["Equipment", "Standard Model", "1", "N/A", "Received"]);
+        }
+
+        doc.autoTable({
+          startY: tableStartY,
+          head: [["CPE", "Model", "Qty", isOfficeCopy ? "CPE Serial No. & Scanned Details" : "CPE Serial No.", "Remarks"]],
+          body: tableRows,
+          theme: 'plain',
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: isOfficeCopy ? 7.5 : 8.5, cellPadding: isOfficeCopy ? 3 : 3.5, textColor: [0, 0, 0], lineWidth: 0.2, lineColor: [0, 0, 0], valign: 'middle' },
+          headStyles: { fillColor: [230, 230, 230], fontStyle: 'bold', halign: 'center', fontSize: 9 },
+          columnStyles: { 0: { width: 42 }, 1: { width: 24 }, 2: { halign: 'center', width: 12 }, 3: { width: 79 }, 4: { fontStyle: 'bold', halign: 'center', width: 33 } },
+          didDrawCell: function (data) {
+            if (data.section === 'body' && data.column.index === 0) {
+              let cellText = (data.cell.raw || "").toString();
+              if (cellText.includes('\n')) {
+                let parts = cellText.split('\n');
+                doc.setFillColor(255, 255, 255);
+                doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F');
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(10);
+                doc.text(parts[0], data.cell.x + 3, data.cell.y + 5);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(6.5);
+                doc.setTextColor(80);
+                doc.text(parts[1], data.cell.x + 3, data.cell.y + 9);
+              } else {
+                doc.setFillColor(255, 255, 255);
+                doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F');
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(10);
+                doc.setTextColor(0, 0, 0);
+                doc.text(cellText, data.cell.x + 3, data.cell.y + 7);
+              }
+            }
+          }
+        });
+
+        let finalY = doc.lastAutoTable.finalY + 4;
+
+        if (isOfficeCopy && scanLogs.length > 0) {
+          let scanSummaryText = "Full Scanned Data: " + scanLogs.join("  |  ");
+          let wrappedScan = doc.splitTextToSize(scanSummaryText, 182);
+          let scanBoxH = Math.max(12, wrappedScan.length * 3.8 + 4);
+          if (finalY + scanBoxH > 232) {
+            finalY = 232 - scanBoxH;
+          }
+          doc.setFillColor(248, 250, 252);
+          doc.rect(10, finalY, 190, scanBoxH, 'F');
+          doc.setDrawColor(0);
+          doc.rect(10, finalY, 190, scanBoxH);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7);
+          doc.setTextColor(30, 41, 59);
+          doc.text(wrappedScan, 14, finalY + 4.2);
+          finalY += scanBoxH + 3;
+        }
+        doc.setFillColor(254, 242, 242);
+        doc.rect(10, finalY, 190, 16, 'F');
+        doc.setDrawColor(0);
+        doc.rect(10, finalY, 190, 16);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(211, 47, 47);
+        doc.text("Equipment Return Acknowledged", 105, finalY + 5, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(50);
+        doc.text("Thank you for returning the Airtel equipment. We value the time you spent with the Airtel family.", 105, finalY + 11, { align: "center" });
+
+        let signY = 250;
+        doc.line(20, signY + 2, 70, signY + 2);
+        doc.line(125, signY + 2, 185, signY + 2);
+        if (dd.customerSig) {
+          try { doc.addImage(dd.customerSig, 'PNG', 20, signY - 14, 50, 12); } catch (e) { console.log(e); }
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(0);
+        doc.text(c.name, 45, signY, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "normal");
+        doc.text("Customer's Name & Signature", 45, signY + 6, { align: "center" });
+
+        if (dd.executiveSig) {
+          try { doc.addImage(dd.executiveSig, 'PNG', 130, signY - 14, 50, 12); } catch (e) { console.log(e); }
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.text(execName, 155, signY, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "normal");
+        doc.text("Field Executive Name & Signature", 155, signY + 6, { align: "center" });
+
+        doc.save(`${filePrefix}_${c.name.replace(/\s+/g, '_')}.pdf`);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function renderMyReport() {
+      let container = document.getElementById('reportListContainer');
+      let searchVal = document.getElementById('reportSearchInput').value.toLowerCase();
+      let userEmail = activeUser ? (extractUserEmail(activeUser)) : "";
+      let userName = activeUser ? (activeUser.name || "") : "";
+
+      let myRecoveries = allSystemCustomers
+        .filter(c => c.category === 'Already Recovery' && ((userEmail && c.addedByEmail === userEmail) || (userName && c.execName === userName)))
+        .sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+
+      if (searchVal) {
+        myRecoveries = myRecoveries.filter(c =>
+          (c.name && c.name.toLowerCase().includes(searchVal)) ||
+          (c.mobile && c.mobile.toString().toLowerCase().includes(searchVal)) ||
+          (c.crm && c.crm.toLowerCase().includes(searchVal))
+        );
+      }
+
+      if (myRecoveries.length === 0) {
+        container.innerHTML = `<p style="text-align:center; color:#666; padding:20px;">No recoveries found.</p>`;
+        return;
+      }
+
+      let html = `<p style="font-weight:bold; color:#333; margin-top:5px;">Total Recovered: ${myRecoveries.length} customers</p>`;
+      html += `<table class="report-table"><thead><tr><th>Name</th><th>Mobile</th><th>Order ID</th><th>Action</th></tr></thead><tbody>`;
+      myRecoveries.forEach(c => {
+        html += `<tr>
+          <td><b>${c.name || 'N/A'}</b></td>
+          <td>${c.mobile || 'N/A'}</td>
+          <td>${c.crm || 'N/A'}</td>
+          <td>
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              <button type="button" class="btn" style="background:#e50000; padding:6px 10px; font-size:11px; width:100%; box-sizing:border-box;" onclick="downloadExistingPDFById('${String(c.id || '').replace(/'/g, "\\'")}', 'CUSTOMER')">📥 Customer Copy</button>
+              <button type="button" class="btn" style="background:#1976d2; padding:6px 10px; font-size:11px; width:100%; box-sizing:border-box;" onclick="downloadExistingPDFById('${String(c.id || '').replace(/'/g, "\\'")}', 'OFFICE')">🏢 Office Copy</button>
+            </div>
+          </td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+      container.innerHTML = html;
+    }
+
+    function downloadExistingPDFById(id, copyType = "CUSTOMER") {
+      let custObj = allSystemCustomers.find(c => String(c.id) === String(id));
+      if (custObj) {
+        generatePDFReceipt(custObj, copyType);
+      } else {
+        alert("Record not found!");
+      }
+    }
+
+    function downloadExistingPDF(custObj, copyType = "CUSTOMER") {
+      generatePDFReceipt(custObj, copyType);
+    }
+  </script>
+</body>
+</html>

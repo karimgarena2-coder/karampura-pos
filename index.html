@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Karampura Mini Supermarket - POS & Online Invoice</title>
+  
+  <!-- Telegram Mini App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  
+  <!-- Tailwind CSS for clean mobile-first POS layout -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter & Noto Sans Devanagari for crisp Hindi/English display -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Lightweight Barcode/QR Fallback Library (html5-qrcode) for devices without native BarcodeDetector -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans Devanagari', sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Custom Scrollbar for smooth product lists */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+
+    /* PhonePe / Paytm Style Laser Scan Line Animation */
+    @keyframes scanLaser {
+      0% { top: 10%; opacity: 0.7; }
+      50% { top: 88%; opacity: 1; }
+      100% { top: 10%; opacity: 0.7; }
+    }
+    .scanner-laser {
+      position: absolute;
+      left: 6%;
+      right: 6%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #10b981, #34d399, #10b981, transparent);
+      box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.85);
+      border-radius: 9999px;
+      animation: scanLaser 2s ease-in-out infinite;
+    }
+
+    /* Scanner Corner Brackets */
+    .scan-frame {
+      position: relative;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.62);
+    }
+
+    /* Print Styles for Clean Customer Invoice PDF/Thermal Print */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printable-invoice, #printable-invoice * {
+        visibility: visible;
+      }
+      #printable-invoice {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 12px !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col select-none">
+
+  <!-- ===================================================================== -->
+  <!-- MODE 1: PUBLIC CUSTOMER DIGITAL INVOICE VIEW (Opens via ?invoice=...) -->
+  <!-- ===================================================================== -->
+  <div id="customer-invoice-view" class="hidden min-h-screen bg-slate-100 py-4 px-3 sm:py-8">
+    <div class="max-w-md mx-auto">
+      <!-- Top Action Bar for Customer -->
+      <div class="no-print flex items-center justify-between mb-3 px-1">
+        <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Verified Digital E-Bill
+        </span>
+        <button onclick="window.print()" class="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          Print / Save PDF
+        </button>
+      </div>
+
+      <!-- Receipt Card -->
+      <div id="printable-invoice" class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+        <!-- Store Header -->
+        <div class="bg-gradient-to-r from-emerald-700 to-emerald-600 text-white p-5 text-center relative">
+          <div class="w-12 h-12 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-2 border border-white/25">
+            <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          </div>
+          <h1 id="cust-store-name" class="text-xl font-extrabold tracking-tight">Karampura Mini Supermarket</h1>
+          <p id="cust-store-address" class="text-xs text-emerald-100 mt-1">Karampura, New Delhi - 110015</p>
+          <p id="cust-store-phone" class="text-xs text-emerald-100 mt-0.5">Ph: +91 98765 43210</p>
+        </div>
+
+        <!-- Bill Meta Info -->
+        <div class="p-4 sm:p-5 border-b border-dashed border-slate-200 bg-slate-50/60">
+          <div class="flex justify-between items-start text-xs">
+            <div>
+              <p class="text-slate-400 uppercase font-semibold tracking-wider text-[10px]">Invoice No.</p>
+              <p id="cust-inv-id" class="font-bold text-slate-800 text-sm mt-0.5">#INV-1001</p>
+            </div>
+            <div class="text-right">
+              <p class="text-slate-400 uppercase font-semibold tracking-wider text-[10px]">Date & Time</p>
+              <p id="cust-inv-date" class="font-semibold text-slate-700 mt-0.5">--</p>
+            </div>
+          </div>
+
+          <div class="mt-3 pt-3 border-t border-slate-200/70 flex justify-between items-center text-xs">
+            <div>
+              <span class="text-slate-400">Customer:</span>
+              <span id="cust-name" class="font-bold text-slate-800 ml-1">Walk-in Customer</span>
+              <span id="cust-phone" class="text-slate-500 block text-[11px]"></span>
+            </div>
+            <div class="text-right">
+              <span class="inline-block bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-lg text-[11px] uppercase tracking-wide" id="cust-pay-mode">PAID • UPI</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Itemized Table -->
+        <div class="p-4 sm:p-5">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 text-[11px] font-bold uppercase text-slate-400">
+                <th class="pb-2">Item</th>
+                <th class="pb-2 text-center">Qty</th>
+                <th class="pb-2 text-right">Rate</th>
+                <th class="pb-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="cust-items-body" class="divide-y divide-slate-100 text-xs sm:text-sm">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+
+          <!-- Totals Breakdown -->
+          <div class="mt-4 pt-3 border-t border-dashed border-slate-300 space-y-1.5 text-xs sm:text-sm">
+            <div class="flex justify-between text-slate-600">
+              <span>Subtotal (<span id="cust-total-items">0</span> items)</span>
+              <span id="cust-subtotal" class="font-semibold">₹0.00</span>
+            </div>
+            <div id="cust-discount-row" class="flex justify-between text-emerald-600 hidden">
+              <span>Discount</span>
+              <span id="cust-discount" class="font-semibold">-₹0.00</span>
+            </div>
+            <div class="flex justify-between items-center pt-2.5 mt-2 border-t border-slate-200 text-base sm:text-lg font-extrabold text-slate-900">
+              <span>Grand Total</span>
+              <span id="cust-grand-total" class="text-emerald-700">₹0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Receipt Footer -->
+        <div class="bg-slate-50 px-5 py-4 border-t border-slate-100 text-center">
+          <p id="cust-footer-note" class="text-xs font-medium text-slate-600">धन्यवाद! फिर पधारें • Thank you for shopping with us!</p>
+          <p class="text-[10px] text-slate-400 mt-1">Computer generated digital invoice • No signature required</p>
+        </div>
+      </div>
+
+      <!-- Optional Button to open Store POS (Only for Shopkeeper if needed) -->
+      <div class="no-print text-center mt-5">
+        <a href="?" class="text-xs text-slate-400 hover:text-slate-600 underline">Open Supermarket POS Terminal</a>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MODE 2: ADMIN SUPERMARKET POS TERMINAL (Telegram Mini App Interface)  -->
+  <!-- ===================================================================== -->
+  <div id="pos-admin-view" class="hidden flex-1 flex flex-col max-w-2xl w-full mx-auto bg-slate-50 min-h-screen shadow-xl">
+    
+    <!-- Top Header Bar -->
+    <header class="bg-emerald-700 text-white px-4 py-3 sticky top-0 z-30 shadow-md">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center border border-white/20">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+          </div>
+          <div>
+            <h1 id="header-store-name" class="font-bold text-sm sm:text-base leading-tight">Karampura Mini Supermarket</h1>
+            <p class="text-[11px] text-emerald-100 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
+              POS Billing & Online Invoice
+            </p>
+          </div>
+        </div>
+
+        <!-- Instant PhonePe-Style Scan Button in Header -->
+        <button onclick="openInstantScanner('billing')" class="flex items-center gap-1.5 bg-white text-emerald-800 hover:bg-emerald-50 font-bold text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-sm active:scale-95 transition">
+          <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+          <span>Scan Item</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Tab Content Container -->
+    <main class="flex-1 pb-24">
+
+      <!-- ==================== TAB 1: POS BILLING ==================== -->
+      <section id="tab-billing" class="p-3 sm:p-4 space-y-3">
+        
+        <!-- Big Instant Scan Banner + Quick Custom Item -->
+        <div class="grid grid-cols-5 gap-2">
+          <button onclick="openInstantScanner('billing')" class="col-span-3 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white p-3 rounded-2xl shadow-sm flex items-center justify-center gap-2.5 active:scale-[0.98] transition">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+            <div class="text-left">
+              <div class="text-xs sm:text-sm font-bold leading-tight">Instant Camera Scan</div>
+              <div class="text-[10px] text-slate-300">Barcode / QR स्कैन करें</div>
+            </div>
+          </button>
+
+          <button onclick="openQuickCustomModal()" class="col-span-2 bg-white hover:bg-emerald-50 border border-slate-200 text-slate-800 p-3 rounded-2xl shadow-sm flex flex-col items-center justify-center active:scale-[0.98] transition">
+            <span class="text-emerald-600 font-extrabold text-base leading-none">+ खुल्ला सामान</span>
+            <span class="text-[10px] text-slate-500 mt-1">Custom Item जोड़ें</span>
+          </button>
+        </div>
+
+        <!-- Search & Category Filter -->
+        <div class="space-y-2">
+          <div class="relative">
+            <input type="text" id="pos-search-input" oninput="renderPosProducts()" placeholder="सामान का नाम या बारकोड सर्च करें (उदा. Atta, Oil, Milk)..." class="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm" />
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <button id="clear-search-btn" onclick="clearPosSearch()" class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold px-1.5 py-0.5">✕</button>
+          </div>
+
+          <!-- Category Pills -->
+          <div id="pos-category-pills" class="flex gap-1.5 overflow-x-auto pb-1">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Quick Tap Product Grid -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5 px-0.5">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Quick Tap Items (एक क्लिक में जोड़ें)</h2>
+            <span id="product-count-badge" class="text-[11px] text-slate-400 font-medium">0 items</span>
+          </div>
+          <div id="pos-product-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-0.5">
+            <!-- Product Cards injected here -->
+          </div>
+        </div>
+
+        <!-- Active Cart / Current Bill Card -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-xs sm:text-sm">Current Bill (वर्तमान बिल)</span>
+              <span id="cart-badge-count" class="bg-emerald-500 text-white text-[11px] font-extrabold px-2 py-0.5 rounded-full">0</span>
+            </div>
+            <button onclick="clearCart()" class="text-[11px] text-rose-300 hover:text-rose-200 font-semibold">Clear All</button>
+          </div>
+
+          <!-- Cart Items List -->
+          <div id="cart-items-container" class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+            <div class="p-6 text-center text-slate-400 text-xs">
+              अभी बिल में कोई सामान नहीं है।<br>ऊपर से सामान चुनें या बारकोड स्कैन करें।
+            </div>
+          </div>
+
+          <!-- Customer Details & Payment Section (Visible when cart has items) -->
+          <div id="checkout-panel" class="hidden p-3.5 bg-slate-50 border-t border-slate-200 space-y-3">
+            
+            <!-- Customer Name & Mobile -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Name (Optional)</label>
+                <input type="text" id="bill-cust-name" placeholder="कस्टमर का नाम" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">WhatsApp / Mobile No.</label>
+                <input type="tel" id="bill-cust-phone" placeholder="98XXXXXXXX" maxlength="10" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <!-- Discount & Payment Mode -->
+            <div class="grid grid-cols-2 gap-2 items-end">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Bill Discount (₹ में छूट)</label>
+                <input type="number" id="bill-discount-input" value="0" min="0" oninput="updateCartTotals()" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Payment Mode</label>
+                <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl">
+                  <button type="button" onclick="selectPaymentMode('UPI')" id="pay-btn-UPI" class="pay-mode-btn py-1.5 rounded-lg text-[11px] font-bold bg-emerald-600 text-white shadow-sm transition">UPI</button>
+                  <button type="button" onclick="selectPaymentMode('Cash')" id="pay-btn-Cash" class="pay-mode-btn py-1.5 rounded-lg text-[11px] font-bold text-slate-700 hover:bg-white/60 transition">Cash</button>
+                  <button type="button" onclick="selectPaymentMode('Card')" id="pay-btn-Card" class="pay-mode-btn py-1.5 rounded-lg text-[11px] font-bold text-slate-700 hover:bg-white/60 transition">Card</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Total Summary & Generate Invoice Button -->
+            <div class="pt-2 border-t border-slate-200 flex items-center justify-between">
+              <div>
+                <p class="text-[11px] text-slate-500">Grand Total (कुल राशि)</p>
+                <p id="cart-grand-total" class="text-xl font-extrabold text-emerald-700">₹0.00</p>
+              </div>
+              <button onclick="generateOnlineInvoice()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-5 py-3 rounded-xl shadow-md flex items-center gap-2 active:scale-95 transition">
+                <span>Generate Online Bill</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ==================== TAB 2: INVENTORY / PRODUCTS ==================== -->
+      <section id="tab-products" class="hidden p-3 sm:p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-extrabold text-base text-slate-800">Store Products (सामान की लिस्ट)</h2>
+            <p class="text-xs text-slate-500">नया सामान जोड़ें या बारकोड लिंक करें</p>
+          </div>
+          <button onclick="openProductFormModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm flex items-center gap-1.5 active:scale-95">
+            <span>+ Add Product</span>
+          </button>
+        </div>
+
+        <input type="text" id="manage-search-input" oninput="renderManageProducts()" placeholder="लिस्ट में सामान खोजें..." class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+
+        <div id="manage-products-list" class="space-y-2">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+
+      <!-- ==================== TAB 3: SALES HISTORY ==================== -->
+      <section id="tab-sales" class="hidden p-3 sm:p-4 space-y-3">
+        <div>
+          <h2 class="font-extrabold text-base text-slate-800">Sales & Bills History (बिक्री रिपोर्ट)</h2>
+          <p class="text-xs text-slate-500">सभी पुराने बिल देखें और कस्टमर को दोबारा लिंक भेजें</p>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-3 gap-2">
+          <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+            <p class="text-[10px] font-bold text-slate-400 uppercase">Total Sales</p>
+            <p id="stat-total-sales" class="text-sm sm:text-base font-extrabold text-emerald-700 mt-0.5">₹0</p>
+          </div>
+          <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+            <p class="text-[10px] font-bold text-slate-400 uppercase">UPI / Online</p>
+            <p id="stat-upi-sales" class="text-sm sm:text-base font-extrabold text-blue-600 mt-0.5">₹0</p>
+          </div>
+          <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+            <p class="text-[10px] font-bold text-slate-400 uppercase">Cash Sales</p>
+            <p id="stat-cash-sales" class="text-sm sm:text-base font-extrabold text-amber-600 mt-0.5">₹0</p>
+          </div>
+        </div>
+
+        <!-- Past Invoices List -->
+        <div id="sales-history-list" class="space-y-2">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+
+      <!-- ==================== TAB 4: STORE SETTINGS ==================== -->
+      <section id="tab-settings" class="hidden p-3 sm:p-4 space-y-4">
+        <div>
+          <h2 class="font-extrabold text-base text-slate-800">Supermarket Settings (दुकान की जानकारी)</h2>
+          <p class="text-xs text-slate-500">यह जानकारी हर कस्टमर के ऑनलाइन बिल पर दिखेगी</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Supermarket / Store Name</label>
+            <input type="text" id="set-store-name" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Full Address (पता)</label>
+            <input type="text" id="set-store-address" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Store Contact Number</label>
+            <input type="text" id="set-store-phone" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Bill Footer Note</label>
+            <input type="text" id="set-footer-note" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <button onclick="saveStoreSettings()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-sm active:scale-[0.99] transition">
+            Save Store Details
+          </button>
+        </div>
+
+        <!-- Hosting Notice for Online Links -->
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-900 space-y-1">
+          <p class="font-bold">💡 ऑनलाइन इनवॉइस लिंक टिप:</p>
+          <p>जब आप इस ऐप को Netlify/Vercel पर लाइव करके Telegram बॉट से जोड़ेंगे, तो हर कस्टमर का लिंक (<span class="font-mono bg-amber-100 px-1 rounded">https://.../?invoice=...</span>) किसी भी मोबाइल ब्राउज़र में बिना Instagram या Telegram के सीधे खुलेगा।</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-white border-t border-slate-200 px-2 py-1.5 flex justify-around items-center z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+      <button onclick="switchTab('billing')" id="nav-billing" class="nav-btn flex flex-col items-center py-1.5 px-3 rounded-xl text-emerald-700 bg-emerald-50 font-bold">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <span class="text-[10px] mt-0.5">POS Bill</span>
+      </button>
+      <button onclick="switchTab('products')" id="nav-products" class="nav-btn flex flex-col items-center py-1.5 px-3 rounded-xl text-slate-500 hover:text-slate-800 font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        <span class="text-[10px] mt-0.5">Products</span>
+      </button>
+      <button onclick="switchTab('sales')" id="nav-sales" class="nav-btn flex flex-col items-center py-1.5 px-3 rounded-xl text-slate-500 hover:text-slate-800 font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span class="text-[10px] mt-0.5">Sales</span>
+      </button>
+      <button onclick="switchTab('settings')" id="nav-settings" class="nav-btn flex flex-col items-center py-1.5 px-3 rounded-xl text-slate-500 hover:text-slate-800 font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span class="text-[10px] mt-0.5">Store</span>
+      </button>
+    </nav>
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 1: PHONEPE / PAYTM STYLE INSTANT CAMERA BARCODE & QR SCANNER    -->
+  <!-- ===================================================================== -->
+  <div id="scanner-modal" class="hidden fixed inset-0 z-50 bg-black flex flex-col">
+    <!-- Top Controls -->
+    <div class="relative z-20 flex items-center justify-between px-4 py-3.5 bg-gradient-to-b from-black/80 to-transparent text-white">
+      <button onclick="closeInstantScanner()" class="flex items-center gap-1.5 bg-white/15 backdrop-blur-md px-3.5 py-2 rounded-full text-xs font-bold active:scale-95">
+        <span>✕ बंद करें</span>
+      </button>
+      <span id="scanner-engine-badge" class="text-[11px] font-semibold bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 px-3 py-1 rounded-full">
+        ⚡ Native Instant Scanner
+      </span>
+      <button id="torch-toggle-btn" onclick="toggleScannerTorch()" class="hidden bg-white/15 backdrop-blur-md p-2.5 rounded-full text-white active:scale-95" title="Flashlight">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </button>
+    </div>
+
+    <!-- Live Camera Feed Container -->
+    <div class="relative flex-1 flex items-center justify-center overflow-hidden bg-black">
+      <!-- Native Video Element (Used when Hardware BarcodeDetector is available) -->
+      <video id="native-scanner-video" class="w-full h-full object-cover" playsinline muted></video>
+      
+      <!-- Fallback HTML5-QRCode Container (Used only if native BarcodeDetector isn't supported) -->
+      <div id="fallback-scanner-reader" class="hidden w-full h-full"></div>
+
+      <!-- PhonePe/Paytm Style Viewfinder Overlay -->
+      <div id="scanner-viewfinder-overlay" class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <div class="scan-frame w-72 h-48 sm:w-80 sm:h-52 rounded-3xl border-2 border-emerald-400/80 overflow-hidden">
+          <!-- Animated Laser Line -->
+          <div class="scanner-laser"></div>
+          <!-- Corner Accents -->
+          <div class="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-2xl"></div>
+          <div class="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-2xl"></div>
+          <div class="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-2xl"></div>
+          <div class="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-2xl"></div>
+        </div>
+        <p class="mt-5 text-white text-xs sm:text-sm font-semibold bg-black/60 px-4 py-1.5 rounded-full backdrop-blur-sm">
+          प्रोडक्ट का Barcode या QR Code फ्रेम के अंदर रखें
+        </p>
+      </div>
+    </div>
+
+    <!-- Bottom Manual Barcode Fallback & Telegram Native QR Option -->
+    <div class="relative z-20 bg-slate-900 p-4 space-y-2.5 border-t border-slate-800">
+      <div class="flex gap-2">
+        <input type="text" id="manual-barcode-input" placeholder="या बारकोड नंबर टाइप करें..." class="flex-1 bg-slate-800 text-white border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-emerald-500" />
+        <button onclick="submitManualBarcode()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl">
+          Enter
+        </button>
+      </div>
+      <button id="tg-native-qr-btn" onclick="triggerTelegramNativeQr()" class="hidden w-full bg-sky-600/20 border border-sky-500/40 text-sky-300 font-semibold text-xs py-2 rounded-xl">
+        Use Telegram Built-in QR Popup
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 2: GENERATED ONLINE INVOICE & WHATSAPP SHARE MODAL              -->
+  <!-- ===================================================================== -->
+  <div id="invoice-share-modal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl animate-fade-in">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">✓</div>
+          <div>
+            <h3 class="font-extrabold text-base text-slate-900">Online Bill Ready!</h3>
+            <p id="modal-inv-subtitle" class="text-xs text-slate-500">Invoice #INV-1001 • ₹0.00</p>
+          </div>
+        </div>
+        <button onclick="closeInvoiceShareModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+
+      <!-- Shareable Online Link Box -->
+      <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1.5">
+        <p class="text-[11px] font-bold text-slate-500 uppercase">Customer Online Bill Link (किसी भी ब्राउज़र में खुलेगा):</p>
+        <div class="flex items-center gap-2">
+          <input type="text" id="generated-invoice-url" readonly class="flex-1 bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-[11px] text-slate-700 font-mono" />
+          <button onclick="copyInvoiceLink()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shrink-0 active:scale-95">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <!-- Primary Share Actions -->
+      <div class="grid grid-cols-1 gap-2.5">
+        <button onclick="shareInvoiceOnWhatsApp()" class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-extrabold text-sm py-3.5 rounded-2xl shadow-md flex items-center justify-center gap-2 active:scale-[0.98] transition">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824z"/></svg>
+          <span>Send Bill Link on WhatsApp</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="previewGeneratedInvoice()" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5">
+            <span>👁️ Preview Bill</span>
+          </button>
+          <button onclick="closeInvoiceShareModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-xl">
+            + New Bill (नया बिल)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 3: ADD / EDIT PRODUCT (Also opens on Unknown Scanned Barcode)   -->
+  <!-- ===================================================================== -->
+  <div id="product-form-modal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3.5 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 id="prod-modal-title" class="font-extrabold text-base text-slate-900">Add / Save Product</h3>
+        <button onclick="closeProductFormModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+
+      <input type="hidden" id="edit-prod-id" />
+
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Barcode / QR Number (Optional)</label>
+        <div class="flex gap-2">
+          <input type="text" id="prod-barcode" placeholder="उदा. 8901058851427" class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono" />
+          <button type="button" onclick="openInstantScanner('productForm')" class="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl">Scan</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Product Name (सामान का नाम) *</label>
+        <input type="text" id="prod-name" placeholder="उदा. Aashirvaad Atta 5kg" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium" />
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Price (₹) *</label>
+          <input type="number" id="prod-price" placeholder="240" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Unit</label>
+          <input type="text" id="prod-unit" placeholder="1 pc / 1 kg" value="1 pc" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Category</label>
+          <select id="prod-category" class="w-full px-2 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
+            <option value="Groceries">Groceries</option>
+            <option value="Dairy & Bakery">Dairy</option>
+            <option value="Snacks & Drinks">Snacks</option>
+            <option value="Personal Care">Care</option>
+            <option value="Household">Household</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 pt-1">
+        <input type="checkbox" id="prod-add-to-cart-after" checked class="w-4 h-4 text-emerald-600 rounded" />
+        <label for="prod-add-to-cart-after" class="text-xs font-medium text-slate-700">सेव करने के बाद तुरंत बिल में भी जोड़ें</label>
+      </div>
+
+      <button onclick="saveProductFromModal()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md">
+        Save Product
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 4: QUICK CUSTOM / LOOSE ITEM MODAL                              -->
+  <!-- ===================================================================== -->
+  <div id="custom-item-modal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3.5 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="font-extrabold text-base text-slate-900">Add Loose / Custom Item (खुल्ला सामान)</h3>
+        <button onclick="closeQuickCustomModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Item Name</label>
+        <input type="text" id="custom-item-name" placeholder="उदा. खुल्ली चीनी / आलू / सब्जी" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Rate (₹)</label>
+          <input type="number" id="custom-item-price" placeholder="50" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Quantity</label>
+          <input type="number" id="custom-item-qty" value="1" min="0.1" step="0.1" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold" />
+        </div>
+      </div>
+
+      <button onclick="addCustomItemToCart()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl">
+        + Add to Current Bill
+      </button>
+    </div>
+  </div>
+
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-box" class="fixed top-16 left-1/2 -translate-x-1/2 z-[60] hidden bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg border border-slate-700 whitespace-nowrap">
+    Message
+  </div>
+
+
+  <!-- ===================================================================== -->
+  <!-- JAVASCRIPT APPLICATION LOGIC                                          -->
+  <!-- ===================================================================== -->
+  <script>
+    // -----------------------------------------------------------------------
+    // 1. DEFAULT DATA & STATE INITIALIZATION
+    // -----------------------------------------------------------------------
+    const DEFAULT_STORE = {
+      name: "Karampura Mini Supermarket",
+      address: "Main Market, Karampura, New Delhi - 110015",
+      phone: "+91 98765 43210",
+      footer: "धन्यवाद! फिर पधारें • Thank you for shopping with us!"
+    };
+
+    const DEFAULT_PRODUCTS = [
+      { id: "p1", barcode: "8901058851427", name: "Aashirvaad Shudh Chakki Atta", unit: "5 kg", price: 245, category: "Groceries" },
+      { id: "p2", barcode: "8901063162112", name: "Fortune Sunlite Refined Oil", unit: "1 L", price: 135, category: "Groceries" },
+      { id: "p3", barcode: "8901725121112", name: "Tata Salt Iodized", unit: "1 kg", price: 28, category: "Groceries" },
+      { id: "p4", barcode: "8901262010016", name: "Amul Taaza Toned Milk", unit: "1 L", price: 54, category: "Dairy & Bakery" },
+      { id: "p5", barcode: "8901262020022", name: "Amul Pasteurised Butter", unit: "100 g", price: 58, category: "Dairy & Bakery" },
+      { id: "p6", barcode: "8901058000290", name: "Maggi 2-Minute Masala Noodles", unit: "70 g", price: 14, category: "Snacks & Drinks" },
+      { id: "p7", barcode: "8901491101837", name: "Parle-G Gold Biscuits", unit: "1 pc", price: 10, category: "Snacks & Drinks" },
+      { id: "p8", barcode: "8901030865213", name: "Surf Excel Easy Wash", unit: "1 kg", price: 132, category: "Household" },
+      { id: "p9", barcode: "8901030712456", name: "Lifebuoy Total 10 Soap", unit: "125 g", price: 36, category: "Personal Care" },
+      { id: "p10", barcode: "8901719110016", name: "India Gate Basmati Rice", unit: "1 kg", price: 110, category: "Groceries" },
+      { id: "p11", barcode: "8901058891232", name: "Tata Tea Gold", unit: "250 g", price: 145, category: "Groceries" },
+      { id: "p12", barcode: "8901764012273", name: "Coca-Cola Cold Drink", unit: "750 ml", price: 40, category: "Snacks & Drinks" }
+    ];
+
+    let storeSettings = JSON.parse(localStorage.getItem("kps_store_settings")) || DEFAULT_STORE;
+    let products = JSON.parse(localStorage.getItem("kps_products")) || DEFAULT_PRODUCTS;
+    let salesHistory = JSON.parse(localStorage.getItem("kps_sales_history")) || [];
+    let cart = [];
+    let selectedCategory = "All";
+    let selectedPaymentMode = "UPI";
+    let lastGeneratedInvoice = null;
+    let lastGeneratedUrl = "";
+
+    // Scanner Runtime Variables
+    let scannerModeTarget = "billing"; // 'billing' or 'productForm'
+    let nativeStream = null;
+    let nativeDetectInterval = null;
+    let html5QrScanner = null;
+    let isTorchOn = false;
+    let lastScannedCode = "";
+    let lastScanTimestamp = 0;
+
+    // -----------------------------------------------------------------------
+    // 2. STARTUP ROUTER: CUSTOMER PUBLIC INVOICE vs. ADMIN POS MODE
+    // -----------------------------------------------------------------------
+    window.addEventListener("DOMContentLoaded", () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const invoicePayload = urlParams.get("invoice");
+
+      if (invoicePayload) {
+        // CUSTOMER MODE: Render clean digital receipt without needing Telegram or Instagram
+        renderPublicCustomerInvoice(invoicePayload);
+      } else {
+        // ADMIN POS MODE: Initialize Telegram Mini App SDK & POS UI
+        initTelegramMiniApp();
+        initPosDashboard();
+      }
+    });
+
+    function initTelegramMiniApp() {
+      try {
+        if (window.Telegram && window.Telegram.WebApp) {
+          const tg = window.Telegram.WebApp;
+          tg.ready();
+          tg.expand();
+          if (tg.setHeaderColor) tg.setHeaderColor("#047857");
+          // Show Telegram built-in QR button inside scanner if running inside Telegram
+          if (tg.initDataUnsafe && Object.keys(tg.initDataUnsafe).length > 0) {
+            const tgQrBtn = document.getElementById("tg-native-qr-btn");
+            if (tgQrBtn) tgQrBtn.classList.remove("hidden");
+          }
+        }
+      } catch (e) {
+        console.log("Running in standard web browser mode");
+      }
+    }
+
+    function triggerHaptic(type = "light") {
+      try {
+        if (window.Telegram?.WebApp?.HapticFeedback) {
+          window.Telegram.WebApp.HapticFeedback.impactOccurred(type);
+        } else if (navigator.vibrate) {
+          navigator.vibrate(45);
+        }
+      } catch (e) {}
+    }
+
+    // Play crisp retail POS beep sound using Web Audio API (no external audio file needed)
+    function playScanBeep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1050, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+      } catch (e) {}
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. URL ENCODING / DECODING FOR SERVERLESS ONLINE CUSTOMER INVOICE
+    // -----------------------------------------------------------------------
+    function encodeInvoiceToUrl(invoiceObj) {
+      // Compact payload keys so the URL stays short and clean for WhatsApp/SMS
+      const compact = {
+        s: storeSettings.name,
+        a: storeSettings.address,
+        p: storeSettings.phone,
+        f: storeSettings.footer,
+        id: invoiceObj.id,
+        dt: invoiceObj.date,
+        cn: invoiceObj.customerName,
+        cp: invoiceObj.customerPhone,
+        pm: invoiceObj.paymentMode,
+        d: invoiceObj.discount,
+        i: invoiceObj.items.map(it => [it.name, it.qty, it.price, it.unit || ""])
+      };
+      const jsonStr = JSON.stringify(compact);
+      // UTF-8 safe Base64 URL encoding (supports Hindi characters cleanly)
+      const utf8Bytes = new TextEncoder().encode(jsonStr);
+      let binary = "";
+      utf8Bytes.forEach(b => binary += String.fromCharCode(b));
+      const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      return `${window.location.origin}${window.location.pathname}?invoice=${base64}`;
+    }
+
+    function decodeInvoiceFromUrl(encoded) {
+      let base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+      while (base64.length % 4) base64 += "=";
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const jsonStr = new TextDecoder().decode(bytes);
+      return JSON.parse(jsonStr);
+    }
+
+    function renderPublicCustomerInvoice(encodedPayload) {
+      document.getElementById("customer-invoice-view").classList.remove("hidden");
+      try {
+        const data = decodeInvoiceFromUrl(encodedPayload);
+        document.getElementById("cust-store-name").textContent = data.s || DEFAULT_STORE.name;
+        document.getElementById("cust-store-address").textContent = data.a || DEFAULT_STORE.address;
+        document.getElementById("cust-store-phone").textContent = data.p ? `Ph: ${data.p}` : "";
+        document.getElementById("cust-inv-id").textContent = `#${data.id}`;
+        document.getElementById("cust-inv-date").textContent = data.dt;
+        document.getElementById("cust-name").textContent = data.cn || "Walk-in Customer";
+        if (data.cp) document.getElementById("cust-phone").textContent = `Mob: ${data.cp}`;
+        document.getElementById("cust-pay-mode").textContent = `PAID • ${data.pm || "UPI"}`;
+        if (data.f) document.getElementById("cust-footer-note").textContent = data.f;
+
+        const tbody = document.getElementById("cust-items-body");
+        tbody.innerHTML = "";
+        let subtotal = 0;
+        let totalQty = 0;
+
+        (data.i || []).forEach(row => {
+          const [name, qty, rate, unit] = row;
+          const amount = qty * rate;
+          subtotal += amount;
+          totalQty += qty;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="py-2.5 pr-2">
+              <div class="font-semibold text-slate-800">${escapeHtml(name)}</div>
+              ${unit ? `<div class="text-[10px] text-slate-400">${escapeHtml(unit)}</div>` : ""}
+            </td>
+            <td class="py-2.5 text-center font-medium text-slate-700">${qty}</td>
+            <td class="py-2.5 text-right text-slate-600">₹${Number(rate).toFixed(2)}</td>
+            <td class="py-2.5 text-right font-bold text-slate-900">₹${amount.toFixed(2)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        const discount = Number(data.d || 0);
+        const grandTotal = Math.max(0, subtotal - discount);
+
+        document.getElementById("cust-total-items").textContent = totalQty;
+        document.getElementById("cust-subtotal").textContent = `₹${subtotal.toFixed(2)}`;
+        if (discount > 0) {
+          document.getElementById("cust-discount-row").classList.remove("hidden");
+          document.getElementById("cust-discount").textContent = `-₹${discount.toFixed(2)}`;
+        }
+        document.getElementById("cust-grand-total").textContent = `₹${grandTotal.toFixed(2)}`;
+      } catch (err) {
+        document.getElementById("printable-invoice").innerHTML = `
+          <div class="p-8 text-center space-y-2">
+            <p class="text-rose-600 font-bold">Invalid or Incomplete Invoice Link</p>
+            <p class="text-xs text-slate-500">कृपया दुकानदार से सही बिल लिंक दोबारा मांगें।</p>
+          </div>
+        `;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. POS DASHBOARD & BILLING LOGIC
+    // -----------------------------------------------------------------------
+    function initPosDashboard() {
+      document.getElementById("pos-admin-view").classList.remove("hidden");
+      document.getElementById("header-store-name").textContent = storeSettings.name;
+      loadSettingsInputs();
+      renderCategoryPills();
+      renderPosProducts();
+      renderCart();
+      renderManageProducts();
+      renderSalesHistory();
+    }
+
+    function switchTab(tabName) {
+      ["billing", "products", "sales", "settings"].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add("hidden");
+        const navBtn = document.getElementById(`nav-${t}`);
+        navBtn.classList.remove("text-emerald-700", "bg-emerald-50", "font-bold");
+        navBtn.classList.add("text-slate-500", "font-medium");
+      });
+      document.getElementById(`tab-${tabName}`).classList.remove("hidden");
+      const activeNav = document.getElementById(`nav-${tabName}`);
+      activeNav.classList.remove("text-slate-500", "font-medium");
+      activeNav.classList.add("text-emerald-700", "bg-emerald-50", "font-bold");
+
+      if (tabName === "sales") renderSalesHistory();
+      if (tabName === "products") renderManageProducts();
+    }
+
+    function renderCategoryPills() {
+      const categories = ["All", ...new Set(products.map(p => p.category))];
+      const container = document.getElementById("pos-category-pills");
+      container.innerHTML = categories.map(cat => `
+        <button onclick="setCategory('${cat}')" class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+          selectedCategory === cat
+            ? "bg-emerald-600 text-white shadow-sm"
+            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+        }">
+          ${cat}
+        </button>
+      `).join("");
+    }
+
+    function setCategory(cat) {
+      selectedCategory = cat;
+      renderCategoryPills();
+      renderPosProducts();
+    }
+
+    function clearPosSearch() {
+      document.getElementById("pos-search-input").value = "";
+      renderPosProducts();
+    }
+
+    function renderPosProducts() {
+      const query = document.getElementById("pos-search-input").value.trim().toLowerCase();
+      document.getElementById("clear-search-btn").classList.toggle("hidden", !query);
+
+      const filtered = products.filter(p => {
+        const matchCat = selectedCategory === "All" || p.category === selectedCategory;
+        const matchQuery = !query || p.name.toLowerCase().includes(query) || (p.barcode && p.barcode.includes(query));
+        return matchCat && matchQuery;
+      });
+
+      document.getElementById("product-count-badge").textContent = `${filtered.length} items`;
+      const grid = document.getElementById("pos-product-grid");
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="col-span-full bg-white p-4 rounded-xl border border-slate-200 text-center text-xs text-slate-400">कोई सामान नहीं मिला। ऊपर "+ खुल्ला सामान" या "Scan" का उपयोग करें।</div>`;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(p => `
+        <button onclick="addProductToCart('${p.id}')" class="bg-white hover:bg-emerald-50/70 active:scale-95 border border-slate-200 rounded-xl p-2.5 text-left shadow-sm transition flex flex-col justify-between">
+          <div>
+            <div class="text-xs font-bold text-slate-800 line-clamp-2 leading-snug">${escapeHtml(p.name)}</div>
+            <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(p.unit || "")}</div>
+          </div>
+          <div class="mt-2 flex items-center justify-between">
+            <span class="text-xs sm:text-sm font-extrabold text-emerald-700">₹${p.price}</span>
+            <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-extrabold text-sm flex items-center justify-center">+</span>
+          </div>
+        </button>
+      `).join("");
+    }
+
+    function addProductToCart(productId) {
+      const prod = products.find(p => p.id === productId);
+      if (!prod) return;
+      const existing = cart.find(item => item.id === productId);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({
+          id: prod.id,
+          name: prod.name,
+          unit: prod.unit,
+          price: Number(prod.price),
+          qty: 1
+        });
+      }
+      triggerHaptic("light");
+      renderCart();
+      showToast(`+1 ${prod.name}`);
+    }
+
+    function updateCartQty(index, delta) {
+      if (!cart[index]) return;
+      cart[index].qty = Number((cart[index].qty + delta).toFixed(2));
+      if (cart[index].qty <= 0) {
+        cart.splice(index, 1);
+      }
+      triggerHaptic("light");
+      renderCart();
+    }
+
+    function clearCart() {
+      cart = [];
+      document.getElementById("bill-discount-input").value = 0;
+      document.getElementById("bill-cust-name").value = "";
+      document.getElementById("bill-cust-phone").value = "";
+      renderCart();
+    }
+
+    function selectPaymentMode(mode) {
+      selectedPaymentMode = mode;
+      ["UPI", "Cash", "Card"].forEach(m => {
+        const btn = document.getElementById(`pay-btn-${m}`);
+        if (m === mode) {
+          btn.classList.add("bg-emerald-600", "text-white", "shadow-sm");
+          btn.classList.remove("text-slate-700", "hover:bg-white/60");
+        } else {
+          btn.classList.remove("bg-emerald-600", "text-white", "shadow-sm");
+          btn.classList.add("text-slate-700", "hover:bg-white/60");
+        }
+      });
+    }
+
+    function renderCart() {
+      const container = document.getElementById("cart-items-container");
+      const checkoutPanel = document.getElementById("checkout-panel");
+      const badgeCount = document.getElementById("cart-badge-count");
+
+      const totalCount = cart.reduce((sum, item) => sum + item.qty, 0);
+      badgeCount.textContent = Number.isInteger(totalCount) ? totalCount : totalCount.toFixed(1);
+
+      if (cart.length === 0) {
+        container.innerHTML = `
+          <div class="p-6 text-center text-slate-400 text-xs">
+            अभी बिल में कोई सामान नहीं है।<br>ऊपर से सामान चुनें या बारकोड स्कैन करें।
+          </div>
+        `;
+        checkoutPanel.classList.add("hidden");
+        return;
+      }
+
+      checkoutPanel.classList.remove("hidden");
+      container.innerHTML = cart.map((item, idx) => `
+        <div class="px-3.5 py-2.5 flex items-center justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-bold text-slate-800 truncate">${escapeHtml(item.name)}</p>
+            <p class="text-[11px] text-slate-500">₹${item.price} × ${item.qty} = <span class="font-bold text-slate-800">₹${(item.price * item.qty).toFixed(2)}</span></p>
+          </div>
+          <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <button onclick="updateCartQty(${idx}, -1)" class="w-7 h-7 rounded-lg bg-white text-slate-700 font-extrabold shadow-sm active:scale-90">−</button>
+            <span class="w-7 text-center text-xs font-extrabold text-slate-900">${item.qty}</span>
+            <button onclick="updateCartQty(${idx}, 1)" class="w-7 h-7 rounded-lg bg-emerald-600 text-white font-extrabold shadow-sm active:scale-90">+</button>
+          </div>
+        </div>
+      `).join("");
+
+      updateCartTotals();
+    }
+
+    function updateCartTotals() {
+      const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      const discount = Math.max(0, Number(document.getElementById("bill-discount-input").value || 0));
+      const grandTotal = Math.max(0, subtotal - discount);
+      document.getElementById("cart-grand-total").textContent = `₹${grandTotal.toFixed(2)}`;
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. GENERATE ONLINE INVOICE & SHARE ON WHATSAPP
+    // -----------------------------------------------------------------------
+    function generateOnlineInvoice() {
+      if (cart.length === 0) return;
+
+      const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      const discount = Math.max(0, Number(document.getElementById("bill-discount-input").value || 0));
+      const grandTotal = Math.max(0, subtotal - discount);
+
+      const nextNum = 1001 + salesHistory.length;
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) +
+                      ", " + now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+
+      const invoiceObj = {
+        id: `INV-${nextNum}`,
+        date: dateStr,
+        customerName: document.getElementById("bill-cust-name").value.trim() || "Walk-in Customer",
+        customerPhone: document.getElementById("bill-cust-phone").value.trim(),
+        paymentMode: selectedPaymentMode,
+        items: JSON.parse(JSON.stringify(cart)),
+        subtotal,
+        discount,
+        grandTotal
+      };
+
+      const shareUrl = encodeInvoiceToUrl(invoiceObj);
+      invoiceObj.url = shareUrl;
+
+      // Save to Sales History
+      salesHistory.unshift(invoiceObj);
+      localStorage.setItem("kps_sales_history", JSON.stringify(salesHistory));
+
+      lastGeneratedInvoice = invoiceObj;
+      lastGeneratedUrl = shareUrl;
+
+      // Show Share Modal
+      document.getElementById("modal-inv-subtitle").textContent = `${invoiceObj.id} • ₹${grandTotal.toFixed(2)} (${invoiceObj.paymentMode})`;
+      document.getElementById("generated-invoice-url").value = shareUrl;
+      document.getElementById("invoice-share-modal").classList.remove("hidden");
+
+      playScanBeep();
+      triggerHaptic("medium");
+      clearCart();
+    }
+
+    function closeInvoiceShareModal() {
+      document.getElementById("invoice-share-modal").classList.add("hidden");
+    }
+
+    function copyInvoiceLink() {
+      const input = document.getElementById("generated-invoice-url");
+      input.select();
+      input.setSelectionRange(0, 99999);
+      try {
+        document.execCommand("copy");
+        showToast("✓ ऑनलाइन बिल लिंक कॉपी हो गया!");
+      } catch (e) {
+        showToast("Link selected - Press Copy");
+      }
+    }
+
+    function shareInvoiceOnWhatsApp() {
+      if (!lastGeneratedInvoice) return;
+      const inv = lastGeneratedInvoice;
+      const phone = (inv.customerPhone || "").replace(/\D/g, "");
+      const waPhone = phone.length === 10 ? `91${phone}` : phone;
+
+      const msg =
+        `*${storeSettings.name}*\n` +
+        `🧾 *Digital E-Bill:* #${inv.id}\n` +
+        `📅 *Date:* ${inv.date}\n` +
+        `💰 *Total Paid:* ₹${inv.grandTotal.toFixed(2)} (${inv.paymentMode})\n\n` +
+        `अपना पूरा ऑनलाइन बिल देखने और डाउनलोड करने के लिए नीचे दिए गए लिंक पर क्लिक करें:\n` +
+        `${lastGeneratedUrl}\n\n` +
+        `धन्यवाद! 🙏`;
+
+      const waUrl = waPhone
+        ? `https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`
+        : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+      window.open(waUrl, "_blank");
+    }
+
+    function previewGeneratedInvoice() {
+      if (lastGeneratedUrl) {
+        window.open(lastGeneratedUrl, "_blank");
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. PHONEPE / PAYTM STYLE INSTANT NATIVE HARDWARE BARCODE SCANNER
+    // -----------------------------------------------------------------------
+    async function openInstantScanner(target = "billing") {
+      scannerModeTarget = target;
+      isTorchOn = false;
+      document.getElementById("scanner-modal").classList.remove("hidden");
+      document.getElementById("manual-barcode-input").value = "";
+
+      const videoEl = document.getElementById("native-scanner-video");
+      const fallbackEl = document.getElementById("fallback-scanner-reader");
+      const overlayEl = document.getElementById("scanner-viewfinder-overlay");
+      const badgeEl = document.getElementById("scanner-engine-badge");
+
+      // Check if browser/Android WebView supports hardware-accelerated BarcodeDetector API
+      if ("BarcodeDetector" in window) {
+        try {
+          badgeEl.textContent = "⚡ Native Hardware Scanner";
+          videoEl.classList.remove("hidden");
+          overlayEl.classList.remove("hidden");
+          fallbackEl.classList.add("hidden");
+
+          nativeStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          });
+
+          videoEl.srcObject = nativeStream;
+          await videoEl.play();
+
+          // Check Torch / Flashlight availability
+          const track = nativeStream.getVideoTracks()[0];
+          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+          const torchBtn = document.getElementById("torch-toggle-btn");
+          if (capabilities.torch) {
+            torchBtn.classList.remove("hidden");
+          } else {
+            torchBtn.classList.add("hidden");
+          }
+
+          const detector = new window.BarcodeDetector({
+            formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code"]
+          });
+
+          // High-frequency detection loop (~15 scans/sec for instant PhonePe-like response)
+          nativeDetectInterval = setInterval(async () => {
+            if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+              try {
+                const barcodes = await detector.detect(videoEl);
+                if (barcodes && barcodes.length > 0) {
+                  handleDetectedBarcode(barcodes[0].rawValue);
+                }
+              } catch (err) {}
+            }
+          }, 70);
+
+          return;
+        } catch (err) {
+          console.warn("Native BarcodeDetector fallback triggered:", err);
+        }
+      }
+
+      // Fallback to HTML5-QRCode library (supports 1D & QR barcodes on iOS/Desktop)
+      try {
+        badgeEl.textContent = "📷 Smart Barcode Scanner";
+        videoEl.classList.add("hidden");
+        overlayEl.classList.add("hidden");
+        fallbackEl.classList.remove("hidden");
+        document.getElementById("torch-toggle-btn").classList.add("hidden");
+
+        html5QrScanner = new Html5Qrcode("fallback-scanner-reader");
+        await html5QrScanner.start(
+          { facingMode: "environment" },
+          { fps: 15, qrbox: { width: 260, height: 160 } },
+          (decodedText) => {
+            handleDetectedBarcode(decodedText);
+          },
+          () => {}
+        );
+      } catch (err) {
+        showToast("कैमरा परमिशन नहीं मिली! नीचे मैनुअल नंबर डालें।");
+      }
+    }
+
+    async function toggleScannerTorch() {
+      if (!nativeStream) return;
+      try {
+        const track = nativeStream.getVideoTracks()[0];
+        isTorchOn = !isTorchOn;
+        await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+        const btn = document.getElementById("torch-toggle-btn");
+        btn.classList.toggle("bg-amber-400", isTorchOn);
+        btn.classList.toggle("text-slate-900", isTorchOn);
+      } catch (e) {}
+    }
+
+    function closeInstantScanner() {
+      if (nativeDetectInterval) {
+        clearInterval(nativeDetectInterval);
+        nativeDetectInterval = null;
+      }
+      if (nativeStream) {
+        nativeStream.getTracks().forEach(track => track.stop());
+        nativeStream = null;
+      }
+      if (html5QrScanner) {
+        html5QrScanner.stop().then(() => html5QrScanner.clear()).catch(() => {});
+        html5QrScanner = null;
+      }
+      document.getElementById("scanner-modal").classList.add("hidden");
+    }
+
+    function triggerTelegramNativeQr() {
+      if (window.Telegram?.WebApp?.showScanQrPopup) {
+        window.Telegram.WebApp.showScanQrPopup({ text: "Scan Product QR / Barcode" }, (text) => {
+          if (text) {
+            window.Telegram.WebApp.closeScanQrPopup();
+            handleDetectedBarcode(text);
+          }
+        });
+      }
+    }
+
+    function submitManualBarcode() {
+      const code = document.getElementById("manual-barcode-input").value.trim();
+      if (code) handleDetectedBarcode(code);
+    }
+
+    function handleDetectedBarcode(rawCode) {
+      const code = String(rawCode).trim();
+      if (!code) return;
+
+      // Prevent duplicate accidental double-scans within 1.4 seconds
+      const now = Date.now();
+      if (code === lastScannedCode && now - lastScanTimestamp < 1400) return;
+      lastScannedCode = code;
+      lastScanTimestamp = now;
+
+      playScanBeep();
+      triggerHaptic("medium");
+      closeInstantScanner();
+
+      if (scannerModeTarget === "productForm") {
+        document.getElementById("prod-barcode").value = code;
+        showToast(`Barcode Scanned: ${code}`);
+        return;
+      }
+
+      // Billing Mode: Look up barcode in store products
+      const matchedProduct = products.find(p => p.barcode === code);
+      if (matchedProduct) {
+        addProductToCart(matchedProduct.id);
+      } else {
+        // Unknown barcode -> Open quick "Add New Product" modal pre-filled with this barcode
+        openProductFormModal(null, code);
+        showToast(`नया बारकोड (${code}) मिला! नाम और रेट सेव करें।`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. PRODUCT MANAGEMENT & CUSTOM ITEMS
+    // -----------------------------------------------------------------------
+    function openProductFormModal(productId = null, prefillBarcode = "") {
+      document.getElementById("product-form-modal").classList.remove("hidden");
+      if (productId) {
+        const prod = products.find(p => p.id === productId);
+        document.getElementById("prod-modal-title").textContent = "Edit Product";
+        document.getElementById("edit-prod-id").value = prod.id;
+        document.getElementById("prod-barcode").value = prod.barcode || "";
+        document.getElementById("prod-name").value = prod.name;
+        document.getElementById("prod-price").value = prod.price;
+        document.getElementById("prod-unit").value = prod.unit || "1 pc";
+        document.getElementById("prod-category").value = prod.category || "Groceries";
+        document.getElementById("prod-add-to-cart-after").checked = false;
+      } else {
+        document.getElementById("prod-modal-title").textContent = "Add New Product";
+        document.getElementById("edit-prod-id").value = "";
+        document.getElementById("prod-barcode").value = prefillBarcode;
+        document.getElementById("prod-name").value = "";
+        document.getElementById("prod-price").value = "";
+        document.getElementById("prod-unit").value = "1 pc";
+        document.getElementById("prod-add-to-cart-after").checked = true;
+      }
+    }
+
+    function closeProductFormModal() {
+      document.getElementById("product-form-modal").classList.add("hidden");
+    }
+
+    function saveProductFromModal() {
+      const id = document.getElementById("edit-prod-id").value;
+      const barcode = document.getElementById("prod-barcode").value.trim();
+      const name = document.getElementById("prod-name").value.trim();
+      const price = Number(document.getElementById("prod-price").value);
+      const unit = document.getElementById("prod-unit").value.trim() || "1 pc";
+      const category = document.getElementById("prod-category").value;
+      const addToCartNow = document.getElementById("prod-add-to-cart-after").checked;
+
+      if (!name || !price || price <= 0) {
+        showToast("कृपया सामान का नाम और सही रेट लिखें!");
+        return;
+      }
+
+      let savedId = id;
+      if (id) {
+        const idx = products.findIndex(p => p.id === id);
+        if (idx !== -1) {
+          products[idx] = { ...products[idx], barcode, name, price, unit, category };
+        }
+      } else {
+        savedId = "p_" + Date.now();
+        products.unshift({ id: savedId, barcode, name, price, unit, category });
+      }
+
+      localStorage.setItem("kps_products", JSON.stringify(products));
+      renderCategoryPills();
+      renderPosProducts();
+      renderManageProducts();
+      closeProductFormModal();
+      showToast("✓ Product Saved!");
+
+      if (addToCartNow) {
+        addProductToCart(savedId);
+      }
+    }
+
+    function deleteProduct(id) {
+      products = products.filter(p => p.id !== id);
+      localStorage.setItem("kps_products", JSON.stringify(products));
+      renderCategoryPills();
+      renderPosProducts();
+      renderManageProducts();
+      showToast("Product removed");
+    }
+
+    function renderManageProducts() {
+      const q = document.getElementById("manage-search-input").value.trim().toLowerCase();
+      const list = products.filter(p => !q || p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q)));
+      const container = document.getElementById("manage-products-list");
+
+      container.innerHTML = list.map(p => `
+        <div class="bg-white p-3 rounded-2xl border border-slate-200 flex items-center justify-between gap-2 shadow-sm">
+          <div class="min-w-0 flex-1">
+            <p class="text-xs sm:text-sm font-bold text-slate-800 truncate">${escapeHtml(p.name)}</p>
+            <p class="text-[11px] text-slate-500">
+              <span class="font-extrabold text-emerald-700">₹${p.price}</span> • ${escapeHtml(p.unit)} • ${escapeHtml(p.category)}
+              ${p.barcode ? `<span class="ml-1 font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">#${p.barcode}</span>` : ""}
+            </p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="openProductFormModal('${p.id}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold">Edit</button>
+            <button onclick="deleteProduct('${p.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold">Del</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    // Quick Custom / Loose Item Modal
+    function openQuickCustomModal() {
+      document.getElementById("custom-item-modal").classList.remove("hidden");
+      document.getElementById("custom-item-name").value = "";
+      document.getElementById("custom-item-price").value = "";
+      document.getElementById("custom-item-qty").value = "1";
+    }
+
+    function closeQuickCustomModal() {
+      document.getElementById("custom-item-modal").classList.add("hidden");
+    }
+
+    function addCustomItemToCart() {
+      const name = document.getElementById("custom-item-name").value.trim() || "Loose Item";
+      const price = Number(document.getElementById("custom-item-price").value);
+      const qty = Number(document.getElementById("custom-item-qty").value) || 1;
+
+      if (!price || price <= 0) {
+        showToast("कृपया सही रेट डालें!");
+        return;
+      }
+
+      cart.push({
+        id: "custom_" + Date.now(),
+        name,
+        unit: "Loose",
+        price,
+        qty
+      });
+
+      closeQuickCustomModal();
+      renderCart();
+      showToast(`+ ${name} added`);
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. SALES HISTORY & STORE SETTINGS
+    // -----------------------------------------------------------------------
+    function renderSalesHistory() {
+      let total = 0, upi = 0, cash = 0;
+      salesHistory.forEach(inv => {
+        total += Number(inv.grandTotal || 0);
+        if (inv.paymentMode === "UPI") upi += Number(inv.grandTotal || 0);
+        if (inv.paymentMode === "Cash") cash += Number(inv.grandTotal || 0);
+      });
+
+      document.getElementById("stat-total-sales").textContent = `₹${total.toFixed(0)}`;
+      document.getElementById("stat-upi-sales").textContent = `₹${upi.toFixed(0)}`;
+      document.getElementById("stat-cash-sales").textContent = `₹${cash.toFixed(0)}`;
+
+      const listEl = document.getElementById("sales-history-list");
+      if (salesHistory.length === 0) {
+        listEl.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-slate-200 text-center text-xs text-slate-400">अभी तक कोई बिल नहीं बना है।</div>`;
+        return;
+      }
+
+      listEl.innerHTML = salesHistory.map((inv, idx) => `
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-extrabold text-xs text-slate-900">#${inv.id}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">${inv.paymentMode}</span>
+            </div>
+            <p class="text-xs font-semibold text-slate-700 mt-0.5">${escapeHtml(inv.customerName)} ${inv.customerPhone ? `(${inv.customerPhone})` : ""}</p>
+            <p class="text-[10px] text-slate-400">${inv.date} • ${inv.items.length} items</p>
+          </div>
+          <div class="text-right space-y-1.5">
+            <p class="text-sm font-extrabold text-emerald-700">₹${Number(inv.grandTotal).toFixed(2)}</p>
+            <button onclick="reopenPastInvoice(${idx})" class="bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl">
+              Share / View
+            </button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function reopenPastInvoice(index) {
+      const inv = salesHistory[index];
+      if (!inv) return;
+      lastGeneratedInvoice = inv;
+      lastGeneratedUrl = inv.url || encodeInvoiceToUrl(inv);
+      document.getElementById("modal-inv-subtitle").textContent = `${inv.id} • ₹${Number(inv.grandTotal).toFixed(2)} (${inv.paymentMode})`;
+      document.getElementById("generated-invoice-url").value = lastGeneratedUrl;
+      document.getElementById("invoice-share-modal").classList.remove("hidden");
+    }
+
+    function loadSettingsInputs() {
+      document.getElementById("set-store-name").value = storeSettings.name;
+      document.getElementById("set-store-address").value = storeSettings.address;
+      document.getElementById("set-store-phone").value = storeSettings.phone;
+      document.getElementById("set-footer-note").value = storeSettings.footer;
+    }
+
+    function saveStoreSettings() {
+      storeSettings = {
+        name: document.getElementById("set-store-name").value.trim() || DEFAULT_STORE.name,
+        address: document.getElementById("set-store-address").value.trim() || DEFAULT_STORE.address,
+        phone: document.getElementById("set-store-phone").value.trim() || DEFAULT_STORE.phone,
+        footer: document.getElementById("set-footer-note").value.trim() || DEFAULT_STORE.footer
+      };
+      localStorage.setItem("kps_store_settings", JSON.stringify(storeSettings));
+      document.getElementById("header-store-name").textContent = storeSettings.name;
+      showToast("✓ Store Settings Saved!");
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. UTILITY HELPERS
+    // -----------------------------------------------------------------------
+    function showToast(msg) {
+      const toast = document.getElementById("toast-box");
+      toast.textContent = msg;
+      toast.classList.remove("hidden");
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => toast.classList.add("hidden"), 2200);
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
